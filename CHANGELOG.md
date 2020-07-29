@@ -26,7 +26,18 @@ CHANGELOG
       # Preview window hidden by default, it appears when you first hit '?'
       fzf --bind '?:preview:cat {}' --preview-window hidden
       ```
+- Added preview window option for setting the initial scroll offset
+  ```sh
+  # Initial scroll offset is set to the line number of each line of
+  # git grep output *minus* 5 lines
+  git grep --line-number '' |
+    fzf --delimiter : --preview 'nl {1}' --preview-window +{2}-5
+  ```
 - Added support for ANSI colors in `--prompt` string
+- Smart match of accented characters
+    - An unaccented character in the query string will match both accented and
+      unaccented characters, while an accented character will only match
+      accented characters. This is similar to how "smart-case" match works.
 - Vim plugin
     - `tmux` layout option for using fzf-tmux
       ```vim
