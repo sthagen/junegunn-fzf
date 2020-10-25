@@ -624,10 +624,6 @@ func (r *LightRenderer) MaxY() int {
 	return r.height
 }
 
-func (r *LightRenderer) DoesAutoWrap() bool {
-	return false
-}
-
 func (r *LightRenderer) NewWindow(top int, left int, width int, height int, preview bool, borderStyle BorderStyle) Window {
 	w := &LightWindow{
 		renderer: r,
@@ -835,7 +831,7 @@ func wrapLine(input string, prefixLength int, max int, tabstop int) []wrappedLin
 	width := 0
 	line := ""
 	for _, r := range input {
-		w := util.Max(util.RuneWidth(r, prefixLength+width, 8), 1)
+		w := util.RuneWidth(r, prefixLength+width, 8)
 		width += w
 		str := string(r)
 		if r == '\t' {

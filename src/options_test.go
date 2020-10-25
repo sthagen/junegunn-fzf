@@ -387,23 +387,26 @@ func TestPreviewOpts(t *testing.T) {
 		opts.Preview.size.size == 50) {
 		t.Error()
 	}
-	opts = optsFor("--preview", "cat {}", "--preview-window=left:15:hidden:wrap")
+	opts = optsFor("--preview", "cat {}", "--preview-window=left:15:hidden:wrap:+{1}-/2")
 	if !(opts.Preview.command == "cat {}" &&
 		opts.Preview.hidden == true &&
 		opts.Preview.wrap == true &&
 		opts.Preview.position == posLeft &&
+		opts.Preview.scroll == "{1}-/2" &&
 		opts.Preview.size.percent == false &&
-		opts.Preview.size.size == 15+2+2) {
+		opts.Preview.size.size == 15) {
 		t.Error(opts.Preview)
 	}
-	opts = optsFor("--preview-window=up:15:wrap:hidden", "--preview-window=down")
+	opts = optsFor("--preview-window=up:15:wrap:hidden:+{1}-/2", "--preview-window=down", "--preview-window=cycle")
 	if !(opts.Preview.command == "" &&
-		opts.Preview.hidden == false &&
-		opts.Preview.wrap == false &&
+		opts.Preview.hidden == true &&
+		opts.Preview.wrap == true &&
+		opts.Preview.cycle == true &&
 		opts.Preview.position == posDown &&
-		opts.Preview.size.percent == true &&
-		opts.Preview.size.size == 50) {
-		t.Error(opts.Preview)
+		opts.Preview.scroll == "{1}-/2" &&
+		opts.Preview.size.percent == false &&
+		opts.Preview.size.size == 15) {
+		t.Error(opts.Preview.size.size)
 	}
 	opts = optsFor("--preview-window=up:15:wrap:hidden")
 	if !(opts.Preview.command == "" &&
@@ -411,7 +414,14 @@ func TestPreviewOpts(t *testing.T) {
 		opts.Preview.wrap == true &&
 		opts.Preview.position == posUp &&
 		opts.Preview.size.percent == false &&
-		opts.Preview.size.size == 15+2) {
+		opts.Preview.size.size == 15) {
+		t.Error(opts.Preview)
+	}
+	opts = optsFor("--preview=foo", "--preview-window=up", "--preview-window=default:70%")
+	if !(opts.Preview.command == "foo" &&
+		opts.Preview.position == posRight &&
+		opts.Preview.size.percent == true &&
+		opts.Preview.size.size == 70) {
 		t.Error(opts.Preview)
 	}
 }

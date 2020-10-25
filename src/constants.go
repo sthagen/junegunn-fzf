@@ -10,7 +10,7 @@ import (
 
 const (
 	// Current version
-	version = "0.22.0"
+	version = "0.23.1"
 
 	// Core
 	coordinatorDelayMax  time.Duration = 100 * time.Millisecond
@@ -27,6 +27,8 @@ const (
 	initialDelayTac   = 100 * time.Millisecond
 	spinnerDuration   = 100 * time.Millisecond
 	previewCancelWait = 500 * time.Millisecond
+	previewChunkDelay = 100 * time.Millisecond
+	previewDelayed    = 500 * time.Millisecond
 	maxPatternLength  = 300
 	maxMulti          = math.MaxInt32
 
