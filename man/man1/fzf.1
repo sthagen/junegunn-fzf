@@ -21,7 +21,7 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 ..
-.TH fzf 1 "Oct 2020" "fzf 0.23.1" "fzf - a command-line fuzzy finder"
+.TH fzf 1 "Nov 2020" "fzf 0.24.2" "fzf - a command-line fuzzy finder"
 
 .SH NAME
 fzf - a command-line fuzzy finder
@@ -192,6 +192,16 @@ Draw border around the finder
 .br
 .BR horizontal "  Horizontal lines above and below the finder"
 .br
+.BR vertical "    Vertical lines on each side of the finder"
+.br
+.BR top
+.br
+.BR bottom
+.br
+.BR left
+.br
+.BR right
+.br
 
 .TP
 .B "--no-unicode"
@@ -267,11 +277,9 @@ Enable processing of ANSI color codes
 .BI "--tabstop=" SPACES
 Number of spaces for a tab character (default: 8)
 .TP
-.BI "--color=" "[BASE_SCHEME][,COLOR:ANSI]"
+.BI "--color=" "[BASE_SCHEME][,COLOR_NAME[:ANSI_COLOR][:ANSI_ATTRIBUTES]]..."
 Color configuration. The name of the base color scheme is followed by custom
-color mappings. Ansi color code of -1 denotes terminal default
-foreground/background color. You can also specify 24-bit color in \fB#rrggbb\fR
-format.
+color mappings.
 
 .RS
 .B BASE SCHEME:
@@ -282,7 +290,7 @@ format.
     \fB16      \fRColor scheme for 16-color terminal
     \fBbw      \fRNo colors (equivalent to \fB--no-color\fR)
 
-.B COLOR:
+.B COLOR NAMES:
     \fBfg         \fRText
     \fBbg         \fRBackground
     \fBpreview-fg \fRPreview window text
@@ -300,10 +308,25 @@ format.
     \fBspinner    \fRStreaming input indicator
     \fBheader     \fRHeader
 
+.B ANSI COLORS:
+    \fB-1         \fRDefault terminal foreground/background color
+    \fB           \fR(or the original color of the text)
+    \fB0 ~ 15     \fR16 base colors
+    \fB16 ~ 255   \fRANSI 256 colors
+    \fB#rrggbb    \fR24-bit colors
+
+.B ANSI ATTRIBUTES: (Only applies to foreground colors)
+    \fBregular    \fRClears previously set attributes; should precede the other ones
+    \fBbold\fR
+    \fBunderline\fR
+    \fBreverse\fR
+    \fBdim\fR
+    \fBitalic\fR
+
 .B EXAMPLES:
 
      \fB# Seoul256 theme with 8-bit colors
-     # (https://github.com/junegunn/seoul256.vim) 
+     # (https://github.com/junegunn/seoul256.vim)
      fzf --color='bg:237,bg+:236,info:143,border:240,spinner:108' \\
          --color='hl:65,fg:252,header:65,fg+:252' \\
          --color='pointer:161,marker:168,prompt:110,hl+:108'

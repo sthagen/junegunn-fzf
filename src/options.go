@@ -58,7 +58,8 @@ const usage = `usage: fzf [options]
                           (default: 10)
     --layout=LAYOUT       Choose layout: [default|reverse|reverse-list]
     --border[=STYLE]      Draw border around the finder
-                          [rounded|sharp|horizontal] (default: rounded)
+                          [rounded|sharp|horizontal|vertical|
+                           top|bottom|left|right] (default: rounded)
     --margin=MARGIN       Screen margin (TRBL / TB,RL / T,RL,B / T,R,B,L)
     --info=STYLE          Finder info style [default|inline|hidden]
     --prompt=STR          Input prompt (default: '> ')
@@ -421,11 +422,21 @@ func parseBorder(str string, optional bool) tui.BorderShape {
 		return tui.BorderSharp
 	case "horizontal":
 		return tui.BorderHorizontal
+	case "vertical":
+		return tui.BorderVertical
+	case "top":
+		return tui.BorderTop
+	case "bottom":
+		return tui.BorderBottom
+	case "left":
+		return tui.BorderLeft
+	case "right":
+		return tui.BorderRight
 	default:
 		if optional && str == "" {
 			return tui.BorderRounded
 		}
-		errorExit("invalid border style (expected: rounded|sharp|horizontal)")
+		errorExit("invalid border style (expected: rounded|sharp|horizontal|vertical|top|bottom|left|right)")
 	}
 	return tui.BorderNone
 }
@@ -590,11 +601,8 @@ func parseTiebreak(str string) []criterion {
 }
 
 func dupeTheme(theme *tui.ColorTheme) *tui.ColorTheme {
-	if theme != nil {
-		dupe := *theme
-		return &dupe
-	}
-	return nil
+	dupe := *theme
+	return &dupe
 }
 
 func parseTheme(defaultTheme *tui.ColorTheme, str string) *tui.ColorTheme {
@@ -609,7 +617,7 @@ func parseTheme(defaultTheme *tui.ColorTheme, str string) *tui.ColorTheme {
 		case "16":
 			theme = dupeTheme(tui.Default16)
 		case "bw", "no":
-			theme = nil
+			theme = tui.NoColorTheme()
 		default:
 			fail := func() {
 				errorExit("invalid color specification: " + str)
@@ -619,54 +627,76 @@ func parseTheme(defaultTheme *tui.ColorTheme, str string) *tui.ColorTheme {
 				continue
 			}
 
-			pair := strings.Split(str, ":")
-			if len(pair) != 2 {
+			components := strings.Split(str, ":")
+			if len(components) < 2 {
 				fail()
 			}
 
-			var ansi tui.Color
-			if rrggbb.MatchString(pair[1]) {
-				ansi = tui.HexToColor(pair[1])
-			} else {
-				ansi32, err := strconv.Atoi(pair[1])
-				if err != nil || ansi32 < -1 || ansi32 > 255 {
-					fail()
+			cattr := tui.NewColorAttr()
+			for _, component := range components[1:] {
+				switch component {
+				case "regular":
+					cattr.Attr = tui.AttrRegular
+				case "bold", "strong":
+					cattr.Attr |= tui.Bold
+				case "dim":
+					cattr.Attr |= tui.Dim
+				case "italic":
+					cattr.Attr |= tui.Italic
+				case "underline":
+					cattr.Attr |= tui.Underline
+				case "blink":
+					cattr.Attr |= tui.Blink
+				case "reverse":
+					cattr.Attr |= tui.Reverse
+				case "":
+				default:
+					if rrggbb.MatchString(component) {
+						cattr.Color = tui.HexToColor(component)
+					} else {
+						ansi32, err := strconv.Atoi(component)
+						if err != nil || ansi32 < -1 || ansi32 > 255 {
+							fail()
+						}
+						cattr.Color = tui.Color(ansi32)
+					}
 				}
-				ansi = tui.Color(ansi32)
 			}
-			switch pair[0] {
+			switch components[0] {
+			case "input":
+				theme.Input = cattr
 			case "fg":
-				theme.Fg = ansi
+				theme.Fg = cattr
 			case "bg":
-				theme.Bg = ansi
+				theme.Bg = cattr
 			case "preview-fg":
-				theme.PreviewFg = ansi
+				theme.PreviewFg = cattr
 			case "preview-bg":
-				theme.PreviewBg = ansi
+				theme.PreviewBg = cattr
 			case "fg+":
-				theme.Current = ansi
+				theme.Current = cattr
 			case "bg+":
-				theme.DarkBg = ansi
+				theme.DarkBg = cattr
 			case "gutter":
-				theme.Gutter = ansi
+				theme.Gutter = cattr
 			case "hl":
-				theme.Match = ansi
+				theme.Match = cattr
 			case "hl+":
-				theme.CurrentMatch = ansi
+				theme.CurrentMatch = cattr
 			case "border":
-				theme.Border = ansi
+				theme.Border = cattr
 			case "prompt":
-				theme.Prompt = ansi
+				theme.Prompt = cattr
 			case "spinner":
-				theme.Spinner = ansi
+				theme.Spinner = cattr
 			case "info":
-				theme.Info = ansi
+				theme.Info = cattr
 			case "pointer":
-				theme.Cursor = ansi
+				theme.Cursor = cattr
 			case "marker":
-				theme.Selected = ansi
+				theme.Selected = cattr
 			case "header":
-				theme.Header = ansi
+				theme.Header = cattr
 			default:
 				fail()
 			}
@@ -1180,7 +1210,7 @@ func parseOptions(opts *Options, allArgs []string) {
 		case "--no-mouse":
 			opts.Mouse = false
 		case "+c", "--no-color":
-			opts.Theme = nil
+			opts.Theme = tui.NoColorTheme()
 		case "+2", "--no-256":
 			opts.Theme = tui.Default16
 		case "--black":
@@ -1477,6 +1507,25 @@ func postProcessOptions(opts *Options) {
 				return
 			}
 		}
+	}
+
+	if opts.Bold {
+		theme := opts.Theme
+		boldify := func(c tui.ColorAttr) tui.ColorAttr {
+			dup := c
+			if !theme.Colored {
+				dup.Attr |= tui.Bold
+			} else if (c.Attr & tui.AttrRegular) == 0 {
+				dup.Attr |= tui.Bold
+			}
+			return dup
+		}
+		theme.Current = boldify(theme.Current)
+		theme.CurrentMatch = boldify(theme.CurrentMatch)
+		theme.Prompt = boldify(theme.Prompt)
+		theme.Input = boldify(theme.Input)
+		theme.Cursor = boldify(theme.Cursor)
+		theme.Spinner = boldify(theme.Spinner)
 	}
 }
 
