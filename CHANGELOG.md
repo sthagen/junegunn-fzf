@@ -1,6 +1,54 @@
 CHANGELOG
 =========
 
+0.24.5
+------
+- Text attributes set in `--color` are not reset when fzf sees another
+  `--color` option for the same element. This allows you to put custom text
+  attributes in your `$FZF_DEFAULT_OPTS` and still have those attributes
+  even when you override the colors.
+
+  ```sh
+  # Default colors and attributes
+  fzf
+
+  # Apply custom text attributes
+  export FZF_DEFAULT_OPTS='--color fg+:italic,hl:-1:underline,hl+:-1:reverse:underline'
+
+  fzf
+
+  # Different colors but you still have the attributes
+  fzf --color hl:176,hl+:177
+
+  # Write "regular" if you want to clear the attributes
+  fzf --color hl:176:regular,hl+:177:regular
+  ```
+
+0.24.4
+------
+- Added `--preview-window` option `follow`
+  ```sh
+  # Preview window will automatically scroll to the bottom
+  fzf --preview-window follow --preview 'for i in $(seq 100000); do
+    echo "$i"
+    sleep 0.01
+    (( i % 300 == 0 )) && printf "\033[2J"
+  done'
+  ```
+- Added `change-prompt` action
+  ```sh
+  fzf --prompt 'foo> ' --bind $'a:change-prompt:\x1b[31mbar> '
+  ```
+- Bug fixes and improvements
+
+0.24.3
+------
+- Added `--padding` option
+  ```sh
+  fzf --margin 5% --padding 5% --border --preview 'cat {}' \
+      --color bg:#222222,preview-bg:#333333
+  ```
+
 0.24.2
 ------
 - Bug fixes and improvements

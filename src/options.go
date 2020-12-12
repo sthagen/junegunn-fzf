@@ -60,7 +60,8 @@ const usage = `usage: fzf [options]
     --border[=STYLE]      Draw border around the finder
                           [rounded|sharp|horizontal|vertical|
                            top|bottom|left|right] (default: rounded)
-    --margin=MARGIN       Screen margin (TRBL / TB,RL / T,RL,B / T,R,B,L)
+    --margin=MARGIN       Screen margin (TRBL | TB,RL | T,RL,B | T,R,B,L)
+    --padding=PADDING     Padding inside border (TRBL | TB,RL | T,RL,B | T,R,B,L)
     --info=STYLE          Finder info style [default|inline|hidden]
     --prompt=STR          Input prompt (default: '> ')
     --pointer=STR         Pointer to the current line (default: '>')
@@ -82,7 +83,7 @@ const usage = `usage: fzf [options]
     --preview=COMMAND     Command to preview highlighted line ({})
     --preview-window=OPT  Preview window layout (default: right:50%)
                           [up|down|left|right][:SIZE[%]]
-                          [:[no]wrap][:[no]cycle][:[no]hidden]
+                          [:[no]wrap][:[no]cycle][:[no]follow][:[no]hidden]
                           [:rounded|sharp|noborder]
                           [:+SCROLL[-OFFSET]]
                           [:default]
@@ -168,6 +169,7 @@ type previewOpts struct {
 	hidden   bool
 	wrap     bool
 	cycle    bool
+	follow   bool
 	border   tui.BorderShape
 }
 
@@ -221,6 +223,7 @@ type Options struct {
 	Header      []string
 	HeaderLines int
 	Margin      [4]sizeSpec
+	Padding     [4]sizeSpec
 	BorderShape tui.BorderShape
 	Unicode     bool
 	Tabstop     int
@@ -229,7 +232,7 @@ type Options struct {
 }
 
 func defaultPreviewOpts(command string) previewOpts {
-	return previewOpts{command, posRight, sizeSpec{50, true}, "", false, false, false, tui.BorderRounded}
+	return previewOpts{command, posRight, sizeSpec{50, true}, "", false, false, false, false, tui.BorderRounded}
 }
 
 func defaultOptions() *Options {
@@ -281,6 +284,7 @@ func defaultOptions() *Options {
 		Header:      make([]string, 0),
 		HeaderLines: 0,
 		Margin:      defaultMargin(),
+		Padding:     defaultMargin(),
 		Unicode:     true,
 		Tabstop:     8,
 		ClearOnExit: true,
@@ -521,6 +525,14 @@ func parseKeyChords(str string, message string) map[int]string {
 			chord = tui.PgUp
 		case "pgdn", "page-down":
 			chord = tui.PgDn
+		case "alt-shift-up", "shift-alt-up":
+			chord = tui.AltSUp
+		case "alt-shift-down", "shift-alt-down":
+			chord = tui.AltSDown
+		case "alt-shift-left", "shift-alt-left":
+			chord = tui.AltSLeft
+		case "alt-shift-right", "shift-alt-right":
+			chord = tui.AltSRight
 		case "shift-up":
 			chord = tui.SUp
 		case "shift-down":
@@ -632,71 +644,72 @@ func parseTheme(defaultTheme *tui.ColorTheme, str string) *tui.ColorTheme {
 				fail()
 			}
 
-			cattr := tui.NewColorAttr()
-			for _, component := range components[1:] {
-				switch component {
-				case "regular":
-					cattr.Attr = tui.AttrRegular
-				case "bold", "strong":
-					cattr.Attr |= tui.Bold
-				case "dim":
-					cattr.Attr |= tui.Dim
-				case "italic":
-					cattr.Attr |= tui.Italic
-				case "underline":
-					cattr.Attr |= tui.Underline
-				case "blink":
-					cattr.Attr |= tui.Blink
-				case "reverse":
-					cattr.Attr |= tui.Reverse
-				case "":
-				default:
-					if rrggbb.MatchString(component) {
-						cattr.Color = tui.HexToColor(component)
-					} else {
-						ansi32, err := strconv.Atoi(component)
-						if err != nil || ansi32 < -1 || ansi32 > 255 {
-							fail()
+			mergeAttr := func(cattr *tui.ColorAttr) {
+				for _, component := range components[1:] {
+					switch component {
+					case "regular":
+						cattr.Attr = tui.AttrRegular
+					case "bold", "strong":
+						cattr.Attr |= tui.Bold
+					case "dim":
+						cattr.Attr |= tui.Dim
+					case "italic":
+						cattr.Attr |= tui.Italic
+					case "underline":
+						cattr.Attr |= tui.Underline
+					case "blink":
+						cattr.Attr |= tui.Blink
+					case "reverse":
+						cattr.Attr |= tui.Reverse
+					case "":
+					default:
+						if rrggbb.MatchString(component) {
+							cattr.Color = tui.HexToColor(component)
+						} else {
+							ansi32, err := strconv.Atoi(component)
+							if err != nil || ansi32 < -1 || ansi32 > 255 {
+								fail()
+							}
+							cattr.Color = tui.Color(ansi32)
 						}
-						cattr.Color = tui.Color(ansi32)
 					}
 				}
 			}
 			switch components[0] {
 			case "input":
-				theme.Input = cattr
+				mergeAttr(&theme.Input)
 			case "fg":
-				theme.Fg = cattr
+				mergeAttr(&theme.Fg)
 			case "bg":
-				theme.Bg = cattr
+				mergeAttr(&theme.Bg)
 			case "preview-fg":
-				theme.PreviewFg = cattr
+				mergeAttr(&theme.PreviewFg)
 			case "preview-bg":
-				theme.PreviewBg = cattr
+				mergeAttr(&theme.PreviewBg)
 			case "fg+":
-				theme.Current = cattr
+				mergeAttr(&theme.Current)
 			case "bg+":
-				theme.DarkBg = cattr
+				mergeAttr(&theme.DarkBg)
 			case "gutter":
-				theme.Gutter = cattr
+				mergeAttr(&theme.Gutter)
 			case "hl":
-				theme.Match = cattr
+				mergeAttr(&theme.Match)
 			case "hl+":
-				theme.CurrentMatch = cattr
+				mergeAttr(&theme.CurrentMatch)
 			case "border":
-				theme.Border = cattr
+				mergeAttr(&theme.Border)
 			case "prompt":
-				theme.Prompt = cattr
+				mergeAttr(&theme.Prompt)
 			case "spinner":
-				theme.Spinner = cattr
+				mergeAttr(&theme.Spinner)
 			case "info":
-				theme.Info = cattr
+				mergeAttr(&theme.Info)
 			case "pointer":
-				theme.Cursor = cattr
+				mergeAttr(&theme.Cursor)
 			case "marker":
-				theme.Selected = cattr
+				mergeAttr(&theme.Selected)
 			case "header":
-				theme.Header = cattr
+				mergeAttr(&theme.Header)
 			default:
 				fail()
 			}
@@ -724,7 +737,7 @@ func init() {
 	// Backreferences are not supported.
 	// "~!@#$%^&*;/|".each_char.map { |c| Regexp.escape(c) }.map { |c| "#{c}[^#{c}]*#{c}" }.join('|')
 	executeRegexp = regexp.MustCompile(
-		`(?si)[:+](execute(?:-multi|-silent)?|reload|preview):.+|[:+](execute(?:-multi|-silent)?|reload|preview)(\([^)]*\)|\[[^\]]*\]|~[^~]*~|![^!]*!|@[^@]*@|\#[^\#]*\#|\$[^\$]*\$|%[^%]*%|\^[^\^]*\^|&[^&]*&|\*[^\*]*\*|;[^;]*;|/[^/]*/|\|[^\|]*\|)`)
+		`(?si)[:+](execute(?:-multi|-silent)?|reload|preview|change-prompt):.+|[:+](execute(?:-multi|-silent)?|reload|preview|change-prompt)(\([^)]*\)|\[[^\]]*\]|~[^~]*~|![^!]*!|@[^@]*@|\#[^\#]*\#|\$[^\$]*\$|%[^%]*%|\^[^\^]*\^|&[^&]*&|\*[^\*]*\*|;[^;]*;|/[^/]*/|\|[^\|]*\|)`)
 }
 
 func parseKeymap(keymap map[int][]action, str string) {
@@ -738,6 +751,8 @@ func parseKeymap(keymap map[int][]action, str string) {
 			prefix = symbol + "reload"
 		} else if strings.HasPrefix(src[1:], "preview") {
 			prefix = symbol + "preview"
+		} else if strings.HasPrefix(src[1:], "change-prompt") {
+			prefix = symbol + "change-prompt"
 		} else if src[len(prefix)] == '-' {
 			c := src[len(prefix)+1]
 			if c == 's' || c == 'S' {
@@ -911,6 +926,8 @@ func parseKeymap(keymap map[int][]action, str string) {
 						offset = len("reload")
 					case actPreview:
 						offset = len("preview")
+					case actChangePrompt:
+						offset = len("change-prompt")
 					case actExecuteSilent:
 						offset = len("execute-silent")
 					case actExecuteMulti:
@@ -950,6 +967,8 @@ func isExecuteAction(str string) actionType {
 		return actReload
 	case "preview":
 		return actPreview
+	case "change-prompt":
+		return actChangePrompt
 	case "execute":
 		return actExecute
 	case "execute-silent":
@@ -1064,6 +1083,10 @@ func parsePreviewWindow(opts *previewOpts, input string) {
 			opts.border = tui.BorderSharp
 		case "noborder":
 			opts.border = tui.BorderNone
+		case "follow":
+			opts.follow = true
+		case "nofollow":
+			opts.follow = false
 		default:
 			if sizeRegex.MatchString(token) {
 				opts.size = parseSize(token, 99, "window size")
@@ -1076,10 +1099,10 @@ func parsePreviewWindow(opts *previewOpts, input string) {
 	}
 }
 
-func parseMargin(margin string) [4]sizeSpec {
+func parseMargin(opt string, margin string) [4]sizeSpec {
 	margins := strings.Split(margin, ",")
 	checked := func(str string) sizeSpec {
-		return parseSize(str, 49, "margin")
+		return parseSize(str, 49, opt)
 	}
 	switch len(margins) {
 	case 1:
@@ -1099,7 +1122,7 @@ func parseMargin(margin string) [4]sizeSpec {
 			checked(margins[0]), checked(margins[1]),
 			checked(margins[2]), checked(margins[3])}
 	default:
-		errorExit("invalid margin: " + margin)
+		errorExit("invalid " + opt + ": " + margin)
 	}
 	return defaultMargin()
 }
@@ -1324,6 +1347,8 @@ func parseOptions(opts *Options, allArgs []string) {
 			opts.Height = sizeSpec{}
 		case "--no-margin":
 			opts.Margin = defaultMargin()
+		case "--no-padding":
+			opts.Padding = defaultMargin()
 		case "--no-border":
 			opts.BorderShape = tui.BorderNone
 		case "--border":
@@ -1335,7 +1360,12 @@ func parseOptions(opts *Options, allArgs []string) {
 			opts.Unicode = true
 		case "--margin":
 			opts.Margin = parseMargin(
+				"margin",
 				nextString(allArgs, &i, "margin required (TRBL / TB,RL / T,RL,B / T,R,B,L)"))
+		case "--padding":
+			opts.Padding = parseMargin(
+				"padding",
+				nextString(allArgs, &i, "padding required (TRBL / TB,RL / T,RL,B / T,R,B,L)"))
 		case "--tabstop":
 			opts.Tabstop = nextInt(allArgs, &i, "tab stop required")
 		case "--clear":
@@ -1404,7 +1434,9 @@ func parseOptions(opts *Options, allArgs []string) {
 			} else if match, value := optString(arg, "--preview-window="); match {
 				parsePreviewWindow(&opts.Preview, value)
 			} else if match, value := optString(arg, "--margin="); match {
-				opts.Margin = parseMargin(value)
+				opts.Margin = parseMargin("margin", value)
+			} else if match, value := optString(arg, "--padding="); match {
+				opts.Padding = parseMargin("padding", value)
 			} else if match, value := optString(arg, "--tabstop="); match {
 				opts.Tabstop = atoi(value)
 			} else if match, value := optString(arg, "--hscroll-off="); match {
