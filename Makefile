@@ -1,3 +1,4 @@
+SHELL          := bash
 GO             ?= go
 GOOS           ?= $(word 1, $(subst /, " ", $(word 4, $(shell go version))))
 
@@ -46,6 +47,8 @@ else ifeq ($(UNAME_M),armv6l)
 else ifeq ($(UNAME_M),armv7l)
 	BINARY := $(BINARYARM7)
 else ifeq ($(UNAME_M),armv8l)
+	BINARY := $(BINARYARM8)
+else ifeq ($(UNAME_M),arm64)
 	BINARY := $(BINARYARM8)
 else ifeq ($(UNAME_M),aarch64)
 	BINARY := $(BINARYARM8)
