@@ -221,6 +221,7 @@ const (
 	actClearScreen
 	actClearQuery
 	actClearSelection
+	actClose
 	actDeleteChar
 	actDeleteCharEOF
 	actEndOfLine
@@ -2222,6 +2223,8 @@ func (t *Terminal) Loop() {
 			case actTogglePreviewWrap:
 				if t.hasPreviewWindow() {
 					t.previewOpts.wrap = !t.previewOpts.wrap
+					// Reset preview version so that full redraw occurs
+					t.previewed.version = 0
 					req(reqPreviewRefresh)
 				}
 			case actToggleSort:
@@ -2331,6 +2334,12 @@ func (t *Terminal) Loop() {
 						t.deselectItem(t.merger.Get(i).item)
 					}
 					req(reqList, reqInfo)
+				}
+			case actClose:
+				if t.isPreviewEnabled() {
+					togglePreview(false)
+				} else {
+					req(reqQuit)
 				}
 			case actToggle:
 				if t.multi > 0 && t.merger.Length() > 0 && toggle() {
@@ -2632,18 +2641,16 @@ func (t *Terminal) Loop() {
 }
 
 func (t *Terminal) constrain() {
+	// count of items to display allowed by filtering
 	count := t.merger.Length()
+	// count of lines can be displayed
 	height := t.maxItems()
-	diffpos := t.cy - t.offset
 
 	t.cy = util.Constrain(t.cy, 0, count-1)
-	t.offset = util.Constrain(t.offset, t.cy-height+1, t.cy)
-	// Adjustment
-	if count-t.offset < height {
-		t.offset = util.Max(0, count-height)
-		t.cy = util.Constrain(t.offset+diffpos, 0, count-1)
-	}
-	t.offset = util.Max(0, t.offset)
+
+	minOffset := t.cy - height + 1
+	maxOffset := util.Max(util.Min(count-height, t.cy), 0)
+	t.offset = util.Constrain(t.offset, minOffset, maxOffset)
 }
 
 func (t *Terminal) vmove(o int, allowCycle bool) {

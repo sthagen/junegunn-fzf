@@ -1,6 +1,12 @@
 CHANGELOG
 =========
 
+0.25.1
+------
+- Added `close` action
+    - Close preview window if open, abort fzf otherwise
+- Bug fixes and improvements
+
 0.25.0
 ------
 - Text attributes set in `--color` are not reset when fzf sees another
