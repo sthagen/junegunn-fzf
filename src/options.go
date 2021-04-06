@@ -58,7 +58,7 @@ const usage = `usage: fzf [options]
     --layout=LAYOUT       Choose layout: [default|reverse|reverse-list]
     --border[=STYLE]      Draw border around the finder
                           [rounded|sharp|horizontal|vertical|
-                           top|bottom|left|right] (default: rounded)
+                           top|bottom|left|right|none] (default: rounded)
     --margin=MARGIN       Screen margin (TRBL | TB,RL | T,RL,B | T,R,B,L)
     --padding=PADDING     Padding inside border (TRBL | TB,RL | T,RL,B | T,R,B,L)
     --info=STYLE          Finder info style [default|inline|hidden]
@@ -81,11 +81,11 @@ const usage = `usage: fzf [options]
   Preview
     --preview=COMMAND     Command to preview highlighted line ({})
     --preview-window=OPT  Preview window layout (default: right:50%)
-                          [up|down|left|right][:SIZE[%]]
-                          [:[no]wrap][:[no]cycle][:[no]follow][:[no]hidden]
-                          [:rounded|sharp|noborder]
-                          [:+SCROLL[OFFSETS][/DENOM]][:~HEADER_LINES]
-                          [:default]
+                          [up|down|left|right][,SIZE[%]]
+                          [,[no]wrap][,[no]cycle][,[no]follow][,[no]hidden]
+                          [,border-BORDER_OPT]
+                          [,+SCROLL[OFFSETS][/DENOM]][,~HEADER_LINES]
+                          [,default]
 
   Scripting
     -q, --query=STR       Start the finder with the given query
@@ -436,11 +436,13 @@ func parseBorder(str string, optional bool) tui.BorderShape {
 		return tui.BorderLeft
 	case "right":
 		return tui.BorderRight
+	case "none":
+		return tui.BorderNone
 	default:
 		if optional && str == "" {
 			return tui.BorderRounded
 		}
-		errorExit("invalid border style (expected: rounded|sharp|horizontal|vertical|top|bottom|left|right)")
+		errorExit("invalid border style (expected: rounded|sharp|horizontal|vertical|top|bottom|left|right|none)")
 	}
 	return tui.BorderNone
 }
@@ -1076,10 +1078,11 @@ func parseInfoStyle(str string) infoStyle {
 }
 
 func parsePreviewWindow(opts *previewOpts, input string) {
-	tokens := strings.Split(input, ":")
+	delimRegex := regexp.MustCompile("[:,]") // : for backward compatibility
 	sizeRegex := regexp.MustCompile("^[0-9]+%?$")
 	offsetRegex := regexp.MustCompile(`^(\+{-?[0-9]+})?([+-][0-9]+)*(-?/[1-9][0-9]*)?$`)
 	headerRegex := regexp.MustCompile("^~(0|[1-9][0-9]*)$")
+	tokens := delimRegex.Split(input, -1)
 	for _, token := range tokens {
 		switch token {
 		case "":
@@ -1105,12 +1108,24 @@ func parsePreviewWindow(opts *previewOpts, input string) {
 			opts.position = posLeft
 		case "right":
 			opts.position = posRight
-		case "rounded", "border":
+		case "rounded", "border", "border-rounded":
 			opts.border = tui.BorderRounded
-		case "sharp":
+		case "sharp", "border-sharp":
 			opts.border = tui.BorderSharp
-		case "noborder":
+		case "noborder", "border-none":
 			opts.border = tui.BorderNone
+		case "border-horizontal":
+			opts.border = tui.BorderHorizontal
+		case "border-vertical":
+			opts.border = tui.BorderVertical
+		case "border-top":
+			opts.border = tui.BorderTop
+		case "border-bottom":
+			opts.border = tui.BorderBottom
+		case "border-left":
+			opts.border = tui.BorderLeft
+		case "border-right":
+			opts.border = tui.BorderRight
 		case "follow":
 			opts.follow = true
 		case "nofollow":
@@ -1368,7 +1383,7 @@ func parseOptions(opts *Options, allArgs []string) {
 			opts.Preview.command = ""
 		case "--preview-window":
 			parsePreviewWindow(&opts.Preview,
-				nextString(allArgs, &i, "preview window layout required: [up|down|left|right][:SIZE[%]][:rounded|sharp|noborder][:wrap][:cycle][:hidden][:+SCROLL[OFFSETS][/DENOM]][:~HEADER_LINES][:default]"))
+				nextString(allArgs, &i, "preview window layout required: [up|down|left|right][,SIZE[%]][,border-BORDER_OPT][,wrap][,cycle][,hidden][,+SCROLL[OFFSETS][/DENOM]][,~HEADER_LINES][,default]"))
 		case "--height":
 			opts.Height = parseHeight(nextString(allArgs, &i, "height required: HEIGHT[%]"))
 		case "--min-height":
