@@ -20,6 +20,10 @@ func HasFullscreenRenderer() bool {
 }
 
 func asTcellColor(color Color) tcell.Color {
+	if color == colDefault {
+		return tcell.ColorDefault
+	}
+
 	value := uint64(tcell.ColorValid) + uint64(color)
 	if color.is24() {
 		value = value | uint64(tcell.ColorIsRGB)
@@ -94,6 +98,8 @@ const (
 	AttrRegular   = Attr(1 << 7)
 	AttrClear     = Attr(1 << 8)
 )
+
+func (r *FullscreenRenderer) Resize(maxHeightFunc func(int) int) {}
 
 func (r *FullscreenRenderer) defaultTheme() *ColorTheme {
 	if _screen.Colors() >= 256 {
