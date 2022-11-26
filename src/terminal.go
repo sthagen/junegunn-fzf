@@ -30,7 +30,7 @@ strings. Acts as input validation for parsePlaceholder function.
 Describes the syntax, but it is fairly lenient.
 
 The following pseudo regex has been reverse engineered from the
-implementation. It is overly strict, but better describes whats possible.
+implementation. It is overly strict, but better describes what's possible.
 As such it is not useful for validation, but rather to generate test
 cases for example.
 
@@ -1220,11 +1220,13 @@ func (t *Terminal) printInfo() {
 	line := t.promptLine()
 	switch t.infoStyle {
 	case infoDefault:
-		t.move(line+1, 0, true)
+		t.move(line+1, 0, t.separatorLen == 0)
 		if t.reading {
 			duration := int64(spinnerDuration)
 			idx := (time.Now().UnixNano() % (duration * int64(len(t.spinner)))) / duration
 			t.window.CPrint(tui.ColSpinner, t.spinner[idx])
+		} else {
+			t.window.Print(" ") // Clear spinner
 		}
 		t.move(line+1, 2, false)
 		pos = 2
@@ -1233,7 +1235,7 @@ func (t *Terminal) printInfo() {
 		if pos+len(" < ") > t.window.Width() {
 			return
 		}
-		t.move(line, pos, true)
+		t.move(line, pos, t.separatorLen == 0)
 		if t.reading {
 			t.window.CPrint(tui.ColSpinner, " < ")
 		} else {
