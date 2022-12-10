@@ -845,6 +845,8 @@ func parseTheme(defaultTheme *tui.ColorTheme, str string) *tui.ColorTheme {
 				mergeAttr(&theme.Separator)
 			case "label":
 				mergeAttr(&theme.BorderLabel)
+			case "preview-label":
+				mergeAttr(&theme.PreviewLabel)
 			case "prompt":
 				mergeAttr(&theme.Prompt)
 			case "spinner":
@@ -1850,6 +1852,11 @@ func postProcessOptions(opts *Options) {
 		keymap[key] = actions
 	}
 	opts.Keymap = keymap
+
+	// If 'double-click' is left unbound, bind it to the action bound to 'enter'
+	if _, prs := opts.Keymap[tui.DoubleClick.AsEvent()]; !prs {
+		opts.Keymap[tui.DoubleClick.AsEvent()] = opts.Keymap[tui.CtrlM.AsEvent()]
+	}
 
 	if opts.Height.auto {
 		for _, s := range []sizeSpec{opts.Margin[0], opts.Margin[2]} {
