@@ -1764,6 +1764,14 @@ class TestGoFZF < TestBase
     tmux.until { |lines| assert_equal '>', lines.last }
   end
 
+  def test_change_query
+    tmux.send_keys %(: | #{FZF} --query foo --bind space:change-query:foobar), :Enter
+    tmux.until { |lines| assert_equal 0, lines.item_count }
+    tmux.until { |lines| assert_equal '> foo', lines.last }
+    tmux.send_keys :Space, 'baz'
+    tmux.until { |lines| assert_equal '> foobarbaz', lines.last }
+  end
+
   def test_clear_selection
     tmux.send_keys %(seq 100 | #{FZF} --multi --bind space:clear-selection), :Enter
     tmux.until { |lines| assert_equal 100, lines.match_count }
@@ -2407,6 +2415,25 @@ class TestGoFZF < TestBase
   def test_info_no_separator
     tmux.send_keys 'seq 100 | fzf -q55 --no-separator', :Enter
     tmux.until { assert(_1[-2] == '  1/100') }
+  end
+
+  def test_prev_next_selected
+    tmux.send_keys 'seq 10 | fzf --multi --bind ctrl-n:next-selected,ctrl-p:prev-selected', :Enter
+    tmux.until { |lines| assert_equal 10, lines.item_count }
+    tmux.send_keys :BTab, :BTab, :Up, :BTab
+    tmux.until { |lines| assert_equal 3, lines.select_count }
+    tmux.send_keys 'C-n'
+    tmux.until { |lines| assert_includes lines, '>>4' }
+    tmux.send_keys 'C-n'
+    tmux.until { |lines| assert_includes lines, '>>2' }
+    tmux.send_keys 'C-n'
+    tmux.until { |lines| assert_includes lines, '>>1' }
+    tmux.send_keys 'C-n'
+    tmux.until { |lines| assert_includes lines, '>>4' }
+    tmux.send_keys 'C-p'
+    tmux.until { |lines| assert_includes lines, '>>1' }
+    tmux.send_keys 'C-p'
+    tmux.until { |lines| assert_includes lines, '>>2' }
   end
 end
 

@@ -889,7 +889,7 @@ func init() {
 	// Backreferences are not supported.
 	// "~!@#$%^&*;/|".each_char.map { |c| Regexp.escape(c) }.map { |c| "#{c}[^#{c}]*#{c}" }.join('|')
 	executeRegexp = regexp.MustCompile(
-		`(?si)[:+](execute(?:-multi|-silent)?|reload|preview|change-prompt|change-preview-window|change-preview|(?:re|un)bind):.+|[:+](execute(?:-multi|-silent)?|reload|preview|change-prompt|change-preview-window|change-preview|(?:re|un)bind)(\([^)]*\)|\[[^\]]*\]|~[^~]*~|![^!]*!|@[^@]*@|\#[^\#]*\#|\$[^\$]*\$|%[^%]*%|\^[^\^]*\^|&[^&]*&|\*[^\*]*\*|;[^;]*;|/[^/]*/|\|[^\|]*\|)`)
+		`(?si)[:+](execute(?:-multi|-silent)?|reload|preview|change-query|change-prompt|change-preview-window|change-preview|(?:re|un)bind):.+|[:+](execute(?:-multi|-silent)?|reload|preview|change-query|change-prompt|change-preview-window|change-preview|(?:re|un)bind)(\([^)]*\)|\[[^\]]*\]|~[^~]*~|![^!]*!|@[^@]*@|\#[^\#]*\#|\$[^\$]*\$|%[^%]*%|\^[^\^]*\^|&[^&]*&|\*[^\*]*\*|;[^;]*;|/[^/]*/|\|[^\|]*\|)`)
 	splitRegexp = regexp.MustCompile("[,:]+")
 }
 
@@ -912,6 +912,8 @@ func parseKeymap(keymap map[tui.Event][]*action, str string) {
 			prefix = symbol + "unbind"
 		} else if strings.HasPrefix(src[1:], "rebind") {
 			prefix = symbol + "rebind"
+		} else if strings.HasPrefix(src[1:], "change-query") {
+			prefix = symbol + "change-query"
 		} else if strings.HasPrefix(src[1:], "change-prompt") {
 			prefix = symbol + "change-prompt"
 		} else if src[len(prefix)] == '-' {
@@ -1060,10 +1062,14 @@ func parseKeymap(keymap map[tui.Event][]*action, str string) {
 				appendAction(actHalfPageUp)
 			case "half-page-down":
 				appendAction(actHalfPageDown)
-			case "previous-history":
-				appendAction(actPreviousHistory)
+			case "prev-history", "previous-history":
+				appendAction(actPrevHistory)
 			case "next-history":
 				appendAction(actNextHistory)
+			case "prev-selected":
+				appendAction(actPrevSelected)
+			case "next-selected":
+				appendAction(actNextSelected)
 			case "toggle-preview":
 				appendAction(actTogglePreview)
 			case "toggle-preview-wrap":
@@ -1117,6 +1123,8 @@ func parseKeymap(keymap map[tui.Event][]*action, str string) {
 						offset = len("change-preview")
 					case actChangePrompt:
 						offset = len("change-prompt")
+					case actChangeQuery:
+						offset = len("change-query")
 					case actUnbind:
 						offset = len("unbind")
 					case actRebind:
@@ -1176,6 +1184,8 @@ func isExecuteAction(str string) actionType {
 		return actChangePreview
 	case "change-prompt":
 		return actChangePrompt
+	case "change-query":
+		return actChangeQuery
 	case "execute":
 		return actExecute
 	case "execute-silent":
@@ -1805,7 +1815,7 @@ func postProcessOptions(opts *Options) {
 	// Default actions for CTRL-N / CTRL-P when --history is set
 	if opts.History != nil {
 		if _, prs := opts.Keymap[tui.CtrlP.AsEvent()]; !prs {
-			opts.Keymap[tui.CtrlP.AsEvent()] = toActions(actPreviousHistory)
+			opts.Keymap[tui.CtrlP.AsEvent()] = toActions(actPrevHistory)
 		}
 		if _, prs := opts.Keymap[tui.CtrlN.AsEvent()]; !prs {
 			opts.Keymap[tui.CtrlN.AsEvent()] = toActions(actNextHistory)
