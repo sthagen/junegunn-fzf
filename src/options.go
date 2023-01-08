@@ -73,6 +73,8 @@ const usage = `usage: fzf [options]
     --info=STYLE           Finder info style [default|inline|hidden]
     --separator=STR        String to form horizontal separator on info line
     --no-separator         Hide info line separator
+    --scrollbar[=CHAR]     Scrollbar character
+    --no-scrollbar         Hide scrollbar
     --prompt=STR           Input prompt (default: '> ')
     --pointer=STR          Pointer to the current line (default: '>')
     --marker=STR           Multi-select marker (default: '>')
@@ -205,6 +207,14 @@ type previewOpts struct {
 	alternative *previewOpts
 }
 
+func (o *previewOpts) Visible() bool {
+	return o.size.size > 0 || o.alternative != nil && o.alternative.size.size > 0
+}
+
+func (o *previewOpts) Toggle() {
+	o.hidden = !o.hidden
+}
+
 func parseLabelPosition(opts *labelOpts, arg string) {
 	opts.column = 0
 	opts.bottom = false
@@ -290,6 +300,7 @@ type Options struct {
 	HeaderLines  int
 	HeaderFirst  bool
 	Ellipsis     string
+	Scrollbar    *string
 	Margin       [4]sizeSpec
 	Padding      [4]sizeSpec
 	BorderShape  tui.BorderShape
@@ -359,6 +370,7 @@ func defaultOptions() *Options {
 		HeaderLines:  0,
 		HeaderFirst:  false,
 		Ellipsis:     "..",
+		Scrollbar:    nil,
 		Margin:       defaultMargin(),
 		Padding:      defaultMargin(),
 		Unicode:      true,
@@ -539,8 +551,13 @@ func parseBorder(str string, optional bool) tui.BorderShape {
 }
 
 func parseKeyChords(str string, message string) map[tui.Event]string {
+	return parseKeyChordsImpl(str, message, errorExit)
+}
+
+func parseKeyChordsImpl(str string, message string, exit func(string)) map[tui.Event]string {
 	if len(str) == 0 {
-		errorExit(message)
+		exit(message)
+		return nil
 	}
 
 	str = regexp.MustCompile("(?i)(alt-),").ReplaceAllString(str, "$1"+string([]rune{escapedComma}))
@@ -590,6 +607,8 @@ func parseKeyChords(str string, message string) map[tui.Event]string {
 			add(tui.BackwardEOF)
 		case "start":
 			add(tui.Start)
+		case "load":
+			add(tui.Load)
 		case "alt-enter", "alt-return":
 			chords[tui.CtrlAltKey('m')] = key
 		case "alt-space":
@@ -672,7 +691,8 @@ func parseKeyChords(str string, message string) map[tui.Event]string {
 			} else if len(runes) == 1 {
 				chords[tui.Key(runes[0])] = key
 			} else {
-				errorExit("unsupported key: " + key)
+				exit("unsupported key: " + key)
+				return nil
 			}
 		}
 	}
@@ -845,6 +865,8 @@ func parseTheme(defaultTheme *tui.ColorTheme, str string) *tui.ColorTheme {
 				mergeAttr(&theme.Border)
 			case "separator":
 				mergeAttr(&theme.Separator)
+			case "scrollbar":
+				mergeAttr(&theme.Scrollbar)
 			case "label":
 				mergeAttr(&theme.BorderLabel)
 			case "preview-label":
@@ -890,7 +912,7 @@ const (
 
 func init() {
 	executeRegexp = regexp.MustCompile(
-		`(?si)[:+](execute(?:-multi|-silent)?|reload|preview|change-query|change-prompt|change-preview-window|change-preview|(?:re|un)bind|pos)`)
+		`(?si)[:+](execute(?:-multi|-silent)?|reload(?:-sync)?|preview|(?:change|transform)-(?:query|prompt)|change-preview-window|change-preview|(?:re|un)bind|pos|put)`)
 	splitRegexp = regexp.MustCompile("[,:]+")
 	actionNameRegexp = regexp.MustCompile("(?i)^[a-z-]+")
 }
@@ -1135,8 +1157,15 @@ func parseActionList(masked string, original string, prevActions []*action, putA
 					actionArg = spec[offset+1 : len(spec)-1]
 					actions = append(actions, &action{t: t, a: actionArg})
 				}
-				if t == actUnbind || t == actRebind {
-					parseKeyChords(actionArg, spec[0:offset]+" target required")
+				switch t {
+				case actUnbind, actRebind:
+					parseKeyChordsImpl(actionArg, spec[0:offset]+" target required", exit)
+				case actChangePreviewWindow:
+					opts := previewOpts{}
+					for _, arg := range strings.Split(actionArg, "|") {
+						// Make sure that each expression is valid
+						parsePreviewWindowImpl(&opts, arg, exit)
+					}
 				}
 			}
 		}
@@ -1164,7 +1193,7 @@ func parseKeymap(keymap map[tui.Event][]*action, str string, exit func(string)) 
 		} else if len(pair[0]) == 1 && pair[0][0] == escapedPlus {
 			key = tui.Key('+')
 		} else {
-			keys := parseKeyChords(pair[0], "key name required")
+			keys := parseKeyChordsImpl(pair[0], "key name required", exit)
 			key = firstKey(keys)
 		}
 		putAllowed := key.Type == tui.Rune && unicode.IsGraphic(key.Char)
@@ -1183,6 +1212,8 @@ func isExecuteAction(str string) actionType {
 	switch prefix {
 	case "reload":
 		return actReload
+	case "reload-sync":
+		return actReloadSync
 	case "unbind":
 		return actUnbind
 	case "rebind":
@@ -1205,6 +1236,12 @@ func isExecuteAction(str string) actionType {
 		return actExecuteSilent
 	case "execute-multi":
 		return actExecuteMulti
+	case "put":
+		return actPut
+	case "transform-prompt":
+		return actTransformPrompt
+	case "transform-query":
+		return actTransformQuery
 	}
 	return actIgnore
 }
@@ -1287,6 +1324,10 @@ func parseInfoStyle(str string) infoStyle {
 }
 
 func parsePreviewWindow(opts *previewOpts, input string) {
+	parsePreviewWindowImpl(opts, input, errorExit)
+}
+
+func parsePreviewWindowImpl(opts *previewOpts, input string, exit func(string)) {
 	tokenRegex := regexp.MustCompile(`[:,]*(<([1-9][0-9]*)\(([^)<]+)\)|[^,:]+)`)
 	sizeRegex := regexp.MustCompile("^[0-9]+%?$")
 	offsetRegex := regexp.MustCompile(`^(\+{-?[0-9]+})?([+-][0-9]+)*(-?/[1-9][0-9]*)?$`)
@@ -1358,7 +1399,8 @@ func parsePreviewWindow(opts *previewOpts, input string) {
 			} else if offsetRegex.MatchString(token) {
 				opts.scroll = token
 			} else {
-				errorExit("invalid preview window option: " + token)
+				exit("invalid preview window option: " + token)
+				return
 			}
 		}
 	}
@@ -1367,7 +1409,7 @@ func parsePreviewWindow(opts *previewOpts, input string) {
 		opts.alternative = &alternativeOpts
 		opts.alternative.hidden = false
 		opts.alternative.alternative = nil
-		parsePreviewWindow(opts.alternative, alternative)
+		parsePreviewWindowImpl(opts.alternative, alternative, exit)
 	}
 }
 
@@ -1560,6 +1602,16 @@ func parseOptions(opts *Options, allArgs []string) {
 		case "--no-separator":
 			nosep := ""
 			opts.Separator = &nosep
+		case "--scrollbar":
+			given, bar := optionalNextString(allArgs, &i)
+			if given {
+				opts.Scrollbar = &bar
+			} else {
+				opts.Scrollbar = nil
+			}
+		case "--no-scrollbar":
+			noBar := ""
+			opts.Scrollbar = &noBar
 		case "--jump-labels":
 			opts.JumpLabels = nextString(allArgs, &i, "label characters required")
 			validateJumpLabels = true
@@ -1729,6 +1781,8 @@ func parseOptions(opts *Options, allArgs []string) {
 				opts.InfoStyle = parseInfoStyle(value)
 			} else if match, value := optString(arg, "--separator="); match {
 				opts.Separator = &value
+			} else if match, value := optString(arg, "--scrollbar="); match {
+				opts.Scrollbar = &value
 			} else if match, value := optString(arg, "--toggle-sort="); match {
 				parseToggleSort(opts.Keymap, value)
 			} else if match, value := optString(arg, "--expect="); match {
@@ -1835,6 +1889,11 @@ func postProcessOptions(opts *Options) {
 	if !opts.Version && !tui.IsLightRendererSupported() && opts.Height.size > 0 {
 		errorExit("--height option is currently not supported on this platform")
 	}
+
+	if opts.Scrollbar != nil && runewidth.StringWidth(*opts.Scrollbar) > 1 {
+		errorExit("scrollbar display width should be 1")
+	}
+
 	// Default actions for CTRL-N / CTRL-P when --history is set
 	if opts.History != nil {
 		if _, prs := opts.Keymap[tui.CtrlP.AsEvent()]; !prs {
@@ -1846,7 +1905,6 @@ func postProcessOptions(opts *Options) {
 	}
 
 	// Extend the default key map
-	previewEnabled := len(opts.Preview.command) > 0 || hasPreviewAction(opts)
 	keymap := defaultKeymap()
 	for key, actions := range opts.Keymap {
 		var lastChangePreviewWindow *action
@@ -1857,15 +1915,6 @@ func postProcessOptions(opts *Options) {
 				opts.ToggleSort = true
 			case actChangePreviewWindow:
 				lastChangePreviewWindow = act
-				if !previewEnabled {
-					// Doesn't matter
-					continue
-				}
-				opts := previewOpts{}
-				for _, arg := range strings.Split(act.a, "|") {
-					// Make sure that each expression is valid
-					parsePreviewWindow(&opts, arg)
-				}
 			}
 		}
 
