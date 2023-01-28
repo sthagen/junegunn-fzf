@@ -147,6 +147,7 @@ type labelPrinter func(tui.Window, int)
 type Terminal struct {
 	initDelay          time.Duration
 	infoStyle          infoStyle
+	infoSep            string
 	separator          labelPrinter
 	separatorLen       int
 	spinner            []string
@@ -276,6 +277,8 @@ const (
 	reqRefresh
 	reqReinit
 	reqFullRedraw
+	reqRedrawBorderLabel
+	reqRedrawPreviewLabel
 	reqClose
 	reqPrintQuery
 	reqPreviewEnqueue
@@ -306,6 +309,8 @@ const (
 	actBackwardDeleteCharEOF
 	actBackwardWord
 	actCancel
+	actChangeBorderLabel
+	actChangePreviewLabel
 	actChangePrompt
 	actChangeQuery
 	actClearScreen
@@ -347,6 +352,8 @@ const (
 	actToggleSort
 	actTogglePreview
 	actTogglePreviewWrap
+	actTransformBorderLabel
+	actTransformPreviewLabel
 	actTransformPrompt
 	actTransformQuery
 	actPreview
@@ -573,6 +580,7 @@ func NewTerminal(opts *Options, eventBox *util.EventBox) *Terminal {
 	t := Terminal{
 		initDelay:          delay,
 		infoStyle:          opts.InfoStyle,
+		infoSep:            opts.InfoSep,
 		separator:          nil,
 		spinner:            makeSpinner(opts.Unicode),
 		queryLen:           [2]int{0, 0},
@@ -723,6 +731,7 @@ func (t *Terminal) ansiLabelPrinter(str string, color *tui.ColorPair, fill bool)
 	}
 
 	// Extract ANSI color codes
+	str = firstLine(str)
 	text, colors, _ := extractColor(str, nil, nil)
 	runes := []rune(text)
 
@@ -777,6 +786,7 @@ func (t *Terminal) ansiLabelPrinter(str string, color *tui.ColorPair, fill bool)
 
 func (t *Terminal) parsePrompt(prompt string) (func(), int) {
 	var state *ansiState
+	prompt = firstLine(prompt)
 	trimmed, colors, _ := extractColor(prompt, state, nil)
 	item := &Item{text: util.ToChars([]byte(trimmed)), colors: colors}
 
@@ -1250,34 +1260,41 @@ func (t *Terminal) resizeWindows(forcePreview bool) {
 	}
 
 	// Print border label
-	printLabel := func(window tui.Window, render labelPrinter, opts labelOpts, length int, borderShape tui.BorderShape) {
-		if window == nil || render == nil {
-			return
-		}
-
-		switch borderShape {
-		case tui.BorderHorizontal, tui.BorderTop, tui.BorderBottom, tui.BorderRounded, tui.BorderSharp, tui.BorderBold, tui.BorderDouble:
-			var col int
-			if opts.column == 0 {
-				col = util.Max(0, (window.Width()-length)/2)
-			} else if opts.column < 0 {
-				col = util.Max(0, window.Width()+opts.column+1-length)
-			} else {
-				col = util.Min(opts.column-1, window.Width()-length)
-			}
-			row := 0
-			if borderShape == tui.BorderBottom || opts.bottom {
-				row = window.Height() - 1
-			}
-			window.Move(row, col)
-			render(window, window.Width())
-		}
-	}
-	printLabel(t.border, t.borderLabel, t.borderLabelOpts, t.borderLabelLen, t.borderShape)
-	printLabel(t.pborder, t.previewLabel, t.previewLabelOpts, t.previewLabelLen, t.previewOpts.border)
+	t.printLabel(t.border, t.borderLabel, t.borderLabelOpts, t.borderLabelLen, t.borderShape, false)
+	t.printLabel(t.pborder, t.previewLabel, t.previewLabelOpts, t.previewLabelLen, t.previewOpts.border, false)
 
 	for i := 0; i < t.window.Height(); i++ {
 		t.window.MoveAndClear(i, 0)
+	}
+}
+
+func (t *Terminal) printLabel(window tui.Window, render labelPrinter, opts labelOpts, length int, borderShape tui.BorderShape, redrawBorder bool) {
+	if window == nil {
+		return
+	}
+
+	switch borderShape {
+	case tui.BorderHorizontal, tui.BorderTop, tui.BorderBottom, tui.BorderRounded, tui.BorderSharp, tui.BorderBold, tui.BorderDouble:
+		if redrawBorder {
+			window.DrawHBorder()
+		}
+		if render == nil {
+			return
+		}
+		var col int
+		if opts.column == 0 {
+			col = util.Max(0, (window.Width()-length)/2)
+		} else if opts.column < 0 {
+			col = util.Max(0, window.Width()+opts.column+1-length)
+		} else {
+			col = util.Min(opts.column-1, window.Width()-length)
+		}
+		row := 0
+		if borderShape == tui.BorderBottom || opts.bottom {
+			row = window.Height() - 1
+		}
+		window.Move(row, col)
+		render(window, window.Width())
 	}
 }
 
@@ -1380,16 +1397,21 @@ func (t *Terminal) printInfo() {
 		pos = 2
 	case infoInline:
 		pos = t.promptLen + t.queryLen[0] + t.queryLen[1] + 1
-		if pos+len(" < ") > t.window.Width() {
-			return
+		str := t.infoSep
+		maxWidth := t.window.Width() - pos
+		width := runewidth.StringWidth(str)
+		if width > maxWidth {
+			trimmed, _ := t.trimRight([]rune(str), maxWidth)
+			str = string(trimmed)
+			width = maxWidth
 		}
 		t.move(line, pos, t.separatorLen == 0)
 		if t.reading {
-			t.window.CPrint(tui.ColSpinner, " < ")
+			t.window.CPrint(tui.ColSpinner, str)
 		} else {
-			t.window.CPrint(tui.ColPrompt, " < ")
+			t.window.CPrint(tui.ColPrompt, str)
 		}
-		pos += len(" < ")
+		pos += width
 	case infoHidden:
 		return
 	}
@@ -2231,7 +2253,6 @@ func (t *Terminal) executeCommand(template string, forcePlus bool, background bo
 		t.redraw()
 		t.refresh()
 	} else {
-		t.tui.Pause(false)
 		if captureFirstLine {
 			out, _ := cmd.StdoutPipe()
 			reader := bufio.NewReader(out)
@@ -2242,7 +2263,6 @@ func (t *Terminal) executeCommand(template string, forcePlus bool, background bo
 		} else {
 			cmd.Run()
 		}
-		t.tui.Resume(false, false)
 	}
 	t.executing.Set(false)
 	cleanTemporaryFiles()
@@ -2608,6 +2628,11 @@ func (t *Terminal) Loop() {
 		}
 	}
 
+	var onFocus []*action
+	if actions, prs := t.keymap[tui.Focus.AsEvent()]; prs {
+		onFocus = actions
+	}
+
 	go func() {
 		var focusedIndex int32 = minItem.Index()
 		var version int64 = -1
@@ -2643,7 +2668,11 @@ func (t *Terminal) Loop() {
 						if currentItem != nil {
 							currentIndex = currentItem.Index()
 						}
-						if focusedIndex != currentIndex || version != t.version {
+						focusChanged := focusedIndex != currentIndex
+						if onFocus != nil && focusChanged {
+							t.serverChan <- onFocus
+						}
+						if focusChanged || version != t.version {
 							version = t.version
 							focusedIndex = currentIndex
 							refreshPreview(t.previewOpts.command)
@@ -2657,6 +2686,10 @@ func (t *Terminal) Loop() {
 						t.printHeader()
 					case reqRefresh:
 						t.suppress = false
+					case reqRedrawBorderLabel:
+						t.printLabel(t.border, t.borderLabel, t.borderLabelOpts, t.borderLabelLen, t.borderShape, true)
+					case reqRedrawPreviewLabel:
+						t.printLabel(t.pborder, t.previewLabel, t.previewLabelOpts, t.previewLabelLen, t.previewOpts.border, true)
 					case reqReinit:
 						t.tui.Resume(t.fullscreen, t.sigstop)
 						t.redraw()
@@ -2909,6 +2942,28 @@ func (t *Terminal) Loop() {
 			case actChangeQuery:
 				t.input = []rune(a.a)
 				t.cx = len(t.input)
+			case actChangeBorderLabel:
+				if t.border != nil {
+					t.borderLabel, t.borderLabelLen = t.ansiLabelPrinter(a.a, &tui.ColBorderLabel, false)
+					req(reqRedrawBorderLabel)
+				}
+			case actChangePreviewLabel:
+				if t.pborder != nil {
+					t.previewLabel, t.previewLabelLen = t.ansiLabelPrinter(a.a, &tui.ColPreviewLabel, false)
+					req(reqRedrawPreviewLabel)
+				}
+			case actTransformBorderLabel:
+				if t.border != nil {
+					label := t.executeCommand(a.a, false, true, true)
+					t.borderLabel, t.borderLabelLen = t.ansiLabelPrinter(label, &tui.ColBorderLabel, false)
+					req(reqRedrawBorderLabel)
+				}
+			case actTransformPreviewLabel:
+				if t.pborder != nil {
+					label := t.executeCommand(a.a, false, true, true)
+					t.previewLabel, t.previewLabelLen = t.ansiLabelPrinter(label, &tui.ColPreviewLabel, false)
+					req(reqRedrawPreviewLabel)
+				}
 			case actChangePrompt:
 				t.prompt, t.promptLen = t.parsePrompt(a.a)
 				req(reqPrompt)

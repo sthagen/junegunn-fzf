@@ -174,11 +174,7 @@ func (r *LightRenderer) Init() {
 		}
 	}
 
-	if r.mouse {
-		r.csi("?1000h")
-		r.csi("?1002h")
-		r.csi("?1006h")
-	}
+	r.enableMouse()
 	r.csi(fmt.Sprintf("%dA", r.MaxY()-1))
 	r.csi("G")
 	r.csi("K")
@@ -609,6 +605,7 @@ func (r *LightRenderer) rmcup() {
 }
 
 func (r *LightRenderer) Pause(clear bool) {
+	r.disableMouse()
 	r.restoreTerminal()
 	if clear {
 		if r.fullscreen {
@@ -621,6 +618,22 @@ func (r *LightRenderer) Pause(clear bool) {
 	}
 }
 
+func (r *LightRenderer) enableMouse() {
+	if r.mouse {
+		r.csi("?1000h")
+		r.csi("?1002h")
+		r.csi("?1006h")
+	}
+}
+
+func (r *LightRenderer) disableMouse() {
+	if r.mouse {
+		r.csi("?1000l")
+		r.csi("?1002l")
+		r.csi("?1006l")
+	}
+}
+
 func (r *LightRenderer) Resume(clear bool, sigcont bool) {
 	r.setupTerminal()
 	if clear {
@@ -629,14 +642,13 @@ func (r *LightRenderer) Resume(clear bool, sigcont bool) {
 		} else {
 			r.rmcup()
 		}
+		r.enableMouse()
 		r.flush()
 	} else if sigcont && !r.fullscreen && r.mouse {
 		// NOTE: SIGCONT (Coming back from CTRL-Z):
 		// It's highly likely that the offset we obtained at the beginning is
 		// no longer correct, so we simply disable mouse input.
-		r.csi("?1000l")
-		r.csi("?1002l")
-		r.csi("?1006l")
+		r.disableMouse()
 		r.mouse = false
 	}
 }
@@ -678,11 +690,7 @@ func (r *LightRenderer) Close() {
 	} else if !r.fullscreen {
 		r.csi("u")
 	}
-	if r.mouse {
-		r.csi("?1000l")
-		r.csi("?1002l")
-		r.csi("?1006l")
-	}
+	r.disableMouse()
 	r.flush()
 	r.closePlatform()
 	r.restoreTerminal()
@@ -719,25 +727,38 @@ func (r *LightRenderer) NewWindow(top int, left int, width int, height int, prev
 		w.fg = r.theme.Fg.Color
 		w.bg = r.theme.Bg.Color
 	}
-	w.drawBorder()
+	w.drawBorder(false)
 	return w
 }
 
-func (w *LightWindow) drawBorder() {
+func (w *LightWindow) DrawHBorder() {
+	w.drawBorder(true)
+}
+
+func (w *LightWindow) drawBorder(onlyHorizontal bool) {
 	switch w.border.shape {
 	case BorderRounded, BorderSharp, BorderBold, BorderDouble:
-		w.drawBorderAround()
+		w.drawBorderAround(onlyHorizontal)
 	case BorderHorizontal:
 		w.drawBorderHorizontal(true, true)
 	case BorderVertical:
+		if onlyHorizontal {
+			return
+		}
 		w.drawBorderVertical(true, true)
 	case BorderTop:
 		w.drawBorderHorizontal(true, false)
 	case BorderBottom:
 		w.drawBorderHorizontal(false, true)
 	case BorderLeft:
+		if onlyHorizontal {
+			return
+		}
 		w.drawBorderVertical(true, false)
 	case BorderRight:
+		if onlyHorizontal {
+			return
+		}
 		w.drawBorderVertical(false, true)
 	}
 }
@@ -779,23 +800,25 @@ func (w *LightWindow) drawBorderVertical(left, right bool) {
 	}
 }
 
-func (w *LightWindow) drawBorderAround() {
+func (w *LightWindow) drawBorderAround(onlyHorizontal bool) {
 	w.Move(0, 0)
 	color := ColBorder
 	if w.preview {
 		color = ColPreviewBorder
 	}
 	hw := runewidth.RuneWidth(w.border.horizontal)
-	vw := runewidth.RuneWidth(w.border.vertical)
 	tcw := runewidth.RuneWidth(w.border.topLeft) + runewidth.RuneWidth(w.border.topRight)
 	bcw := runewidth.RuneWidth(w.border.bottomLeft) + runewidth.RuneWidth(w.border.bottomRight)
 	rem := (w.width - tcw) % hw
 	w.CPrint(color, string(w.border.topLeft)+repeat(w.border.horizontal, (w.width-tcw)/hw)+repeat(' ', rem)+string(w.border.topRight))
-	for y := 1; y < w.height-1; y++ {
-		w.Move(y, 0)
-		w.CPrint(color, string(w.border.vertical))
-		w.CPrint(color, repeat(' ', w.width-vw*2))
-		w.CPrint(color, string(w.border.vertical))
+	if !onlyHorizontal {
+		vw := runewidth.RuneWidth(w.border.vertical)
+		for y := 1; y < w.height-1; y++ {
+			w.Move(y, 0)
+			w.CPrint(color, string(w.border.vertical))
+			w.CPrint(color, repeat(' ', w.width-vw*2))
+			w.CPrint(color, string(w.border.vertical))
+		}
 	}
 	w.Move(w.height-1, 0)
 	rem = (w.width - bcw) % hw
@@ -1040,7 +1063,7 @@ func (w *LightWindow) FinishFill() {
 }
 
 func (w *LightWindow) Erase() {
-	w.drawBorder()
+	w.drawBorder(false)
 	// We don't erase the window here to avoid flickering during scroll
 	w.Move(0, 0)
 }
