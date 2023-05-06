@@ -2493,6 +2493,39 @@ class TestGoFZF < TestBase
     end
   end
 
+  def test_change_preview_window_rotate_hidden
+    tmux.send_keys "seq 100 | #{FZF} --preview-window hidden --preview 'echo =={}==' --bind '" \
+      "a:change-preview-window(nohidden||down,1|)'", :Enter
+    tmux.until { |lines| assert_equal 100, lines.match_count }
+    tmux.until { |lines| refute_includes lines[1], '==1==' }
+    tmux.send_keys 'a'
+    tmux.until { |lines| assert_includes lines[1], '==1==' }
+    tmux.send_keys 'a'
+    tmux.until { |lines| refute_includes lines[1], '==1==' }
+    tmux.send_keys 'a'
+    tmux.until { |lines| assert_includes lines[-2], '==1==' }
+    tmux.send_keys 'a'
+    tmux.until { |lines| refute_includes lines[-2], '==1==' }
+    tmux.send_keys 'a'
+    tmux.until { |lines| assert_includes lines[1], '==1==' }
+  end
+
+  def test_change_preview_window_rotate_hidden_down
+    tmux.send_keys "seq 100 | #{FZF} --bind '?:change-preview-window:up||down|' --preview 'echo =={}==' --preview-window hidden,down,1", :Enter
+    tmux.until { |lines| assert_equal 100, lines.match_count }
+    tmux.until { |lines| refute_includes lines[1], '==1==' }
+    tmux.send_keys '?'
+    tmux.until { |lines| assert_includes lines[1], '==1==' }
+    tmux.send_keys '?'
+    tmux.until { |lines| refute_includes lines[1], '==1==' }
+    tmux.send_keys '?'
+    tmux.until { |lines| assert_includes lines[-2], '==1==' }
+    tmux.send_keys '?'
+    tmux.until { |lines| refute_includes lines[-2], '==1==' }
+    tmux.send_keys '?'
+    tmux.until { |lines| assert_includes lines[1], '==1==' }
+  end
+
   def test_ellipsis
     tmux.send_keys 'seq 1000 | tr "\n" , | fzf --ellipsis=SNIPSNIP -e -q500', :Enter
     tmux.until { |lines| assert_equal 1, lines.match_count }
@@ -2860,6 +2893,29 @@ class TestGoFZF < TestBase
     tmux.until { |lines| assert_equal 10, lines.item_count }
     tmux.send_keys :c
     tmux.until { |lines| assert_equal 0, lines.match_count }
+  end
+
+  def test_reload_and_change
+    tmux.send_keys "(echo foo; echo bar) | #{FZF} --bind 'load:reload-sync(sleep 60)+change-query(bar)'", :Enter
+    tmux.until { |lines| assert_equal 1, lines.match_count }
+  end
+
+  def test_reload_and_change_cache
+    tmux.send_keys "echo bar | #{FZF} --bind 'zero:change-header(foo)+reload(echo foo)+clear-query'", :Enter
+    expected = <<~OUTPUT
+      > bar
+        1/1
+      >
+    OUTPUT
+    tmux.until { assert_block(expected, _1) }
+    tmux.send_keys :z
+    expected = <<~OUTPUT
+      > foo
+        foo
+        1/1
+      >
+    OUTPUT
+    tmux.until { assert_block(expected, _1) }
   end
 end
 

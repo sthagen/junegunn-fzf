@@ -408,6 +408,7 @@ type searchRequest struct {
 	sort    bool
 	sync    bool
 	command *string
+	changed bool
 }
 
 type previewRequest struct {
@@ -936,7 +937,7 @@ func (t *Terminal) UpdateList(merger *Merger, reset bool) {
 		t.selected = make(map[int32]selectedItem)
 		t.version++
 	}
-	if t.hasLoadActions && t.triggerLoad {
+	if t.triggerLoad {
 		t.triggerLoad = false
 		t.eventChan <- tui.Load.AsEvent()
 	}
@@ -1871,7 +1872,7 @@ func (t *Terminal) renderPreviewText(height int, lines []string, lineNo int, unc
 		if ansi != nil {
 			ansi.lbg = -1
 		}
-		line = strings.TrimSuffix(line, "\n")
+		line = strings.TrimRight(line, "\r\n")
 		if lineNo >= height || t.pwindow.Y() == height-1 && t.pwindow.X() > 0 {
 			t.previewed.filled = true
 			t.previewer.scrollable = true
@@ -1953,7 +1954,7 @@ func (t *Terminal) renderPreviewScrollbar(yoff int, barLength int, barStart int)
 		t.previewer.bar[i] = bar
 		t.pborder.Move(y, x)
 		if i >= yoff+barStart && i < yoff+barStart+barLength {
-			t.pborder.CPrint(tui.ColScrollbar, t.scrollbar)
+			t.pborder.CPrint(tui.ColPreviewScrollbar, t.scrollbar)
 		} else {
 			t.pborder.Print(" ")
 		}
@@ -3522,6 +3523,9 @@ func (t *Terminal) Loop() {
 
 				// Split window options
 				tokens := strings.Split(a.a, "|")
+				if len(tokens[0]) > 0 && t.initialPreviewOpts.hidden {
+					t.previewOpts.hidden = false
+				}
 				parsePreviewWindow(&t.previewOpts, tokens[0])
 				if len(tokens) > 1 {
 					a.a = strings.Join(append(tokens[1:], tokens[0]), "|")
@@ -3622,7 +3626,7 @@ func (t *Terminal) Loop() {
 		t.mutex.Unlock() // Must be unlocked before touching reqBox
 
 		if changed || newCommand != nil {
-			t.eventBox.Set(EvtSearchNew, searchRequest{sort: t.sort, sync: reloadSync, command: newCommand})
+			t.eventBox.Set(EvtSearchNew, searchRequest{sort: t.sort, sync: reloadSync, command: newCommand, changed: changed})
 		}
 		for _, event := range events {
 			t.reqBox.Set(event, nil)
