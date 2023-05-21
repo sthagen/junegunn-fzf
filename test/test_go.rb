@@ -2628,12 +2628,16 @@ class TestGoFZF < TestBase
   end
 
   def test_focus_event
-    tmux.send_keys 'seq 100 | fzf --bind "focus:transform-prompt(echo [[{}]])"', :Enter
+    tmux.send_keys 'seq 100 | fzf --bind "focus:transform-prompt(echo [[{}]]),?:unbind(focus)"', :Enter
     tmux.until { |lines| assert_includes(lines[-1], '[[1]]') }
     tmux.send_keys :Up
     tmux.until { |lines| assert_includes(lines[-1], '[[2]]') }
     tmux.send_keys :X
     tmux.until { |lines| assert_includes(lines[-1], '[[]]') }
+    tmux.send_keys '?'
+    tmux.send_keys :BSpace
+    tmux.until { |lines| assert_equal 100, lines.match_count }
+    tmux.until { |lines| refute_includes(lines[-1], '[[1]]') }
   end
 
   def test_labels_center
@@ -2916,6 +2920,20 @@ class TestGoFZF < TestBase
       >
     OUTPUT
     tmux.until { assert_block(expected, _1) }
+  end
+
+  def test_delete_with_modifiers
+    tmux.send_keys "seq 100 | #{FZF} --bind 'ctrl-delete:up+up,shift-delete:down,focus:transform-prompt:echo [{}]'", :Enter
+    tmux.until { |lines| assert_equal 100, lines.item_count }
+    tmux.send_keys 'C-Delete'
+    tmux.until { |lines| assert_equal '[3]', lines[-1] }
+    tmux.send_keys 'S-Delete'
+    tmux.until { |lines| assert_equal '[2]', lines[-1] }
+  end
+
+  def test_become_tty
+    tmux.send_keys "sleep 0.5 | #{FZF} --bind 'start:reload:ls' --bind 'load:become:tty'", :Enter
+    tmux.until { |lines| assert_includes lines, '/dev/tty' }
   end
 end
 
