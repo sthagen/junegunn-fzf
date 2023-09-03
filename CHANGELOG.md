@@ -14,7 +14,16 @@ CHANGELOG
   # Client
   curl localhost:6266 -H "x-api-key: $FZF_API_KEY" -d 'change-query(yo)'
   ```
+- `--listen` server can report program state in JSON format (`GET /`)
+  ```sh
+  # fzf server started in "headless" mode
+  fzf --listen 6266 2> /dev/null
+
+  # Get program state
+  curl localhost:6266 | jq .
+  ```
 - Added `toggle-header` action
+- Bug fixes
 
 0.42.0
 ------
@@ -368,7 +377,7 @@ CHANGELOG
           (sleep 2; seq 1000) | fzf --height ~50%
           ```
 - Fixed tcell renderer used to render full-screen fzf on Windows
-- `--no-clear` is deprecated. Use `reload` action instead.
+- ~~`--no-clear` is deprecated. Use `reload` action instead.~~
 
 0.33.0
 ------
