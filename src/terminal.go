@@ -1301,10 +1301,6 @@ func (t *Terminal) resizeWindows(forcePreview bool) {
 				if previewOpts.hidden {
 					return
 				}
-				// Put scrollbar closer to the right border for consistent look
-				if t.borderShape.HasRight() {
-					width++
-				}
 				if previewOpts.position == posUp {
 					t.window = t.tui.NewWindow(
 						marginInt[0]+pheight, marginInt[3], width, height-pheight, false, noBorder)
@@ -2085,7 +2081,7 @@ func (t *Terminal) printPreview() {
 	unchanged := (t.previewed.filled || numLines == t.previewed.numLines) &&
 		t.previewer.version == t.previewed.version &&
 		t.previewer.offset == t.previewed.offset
-	t.previewer.scrollable = t.previewer.offset > 0 || numLines > height
+	t.previewer.scrollable = t.previewer.offset > t.previewOpts.headerLines || numLines > height
 	t.renderPreviewArea(unchanged)
 	t.renderPreviewSpinner()
 	t.previewed.numLines = numLines
@@ -3104,6 +3100,10 @@ func (t *Terminal) Loop() {
 							t.previewBox.Set(reqPreviewEnqueue,
 								previewRequest{t.previewOpts.command, t.pwindow, t.evaluateScrollOffset(), list})
 						}
+					} else {
+						// Discard the preview content so that it won't accidentally appear
+						// when preview window is re-enabled and previewDelay is triggered
+						t.previewer.lines = nil
 					}
 				}
 			case actTogglePreviewWrap:
