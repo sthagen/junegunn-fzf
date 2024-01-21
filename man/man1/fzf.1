@@ -831,11 +831,13 @@ e.g.
      \fB# Start HTTP server on port 6266
      fzf --listen 6266
 
-     # Get program state in JSON format (experimental)
-     curl localhost:6266
-
      # Send action to the server
      curl -XPOST localhost:6266 -d 'reload(seq 100)+change-prompt(hundred> )'
+
+     # Get program state in JSON format (experimental)
+     # * Make sure NOT to access this endpoint from execute/transform actions
+     #   as it will result in a timeout
+     curl localhost:6266
 
      # Start HTTP server on port 6266 with remote connections allowed
      # * Listening on non-localhost address requires using an API key
@@ -1109,6 +1111,13 @@ list is complete.
 e.g.
      \fB# Change the prompt to "loaded" when the input stream is complete
      (seq 10; sleep 1; seq 11 20) | fzf --prompt 'Loading> ' --bind 'load:change-prompt:Loaded> '\fR
+.RE
+\fIresize\fR
+.RS
+Triggered when the terminal size is changed.
+
+e.g.
+     \fBfzf --bind 'resize:transform-header:echo Resized: ${FZF_COLUMNS}x${FZF_LINES}'\fR
 .RE
 \fIresult\fR
 .RS
