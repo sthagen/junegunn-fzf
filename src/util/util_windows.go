@@ -7,7 +7,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"sync/atomic"
 	"syscall"
@@ -109,18 +108,51 @@ func (x *Executor) Become(stdin *os.File, environ []string, command string) {
 	Exit(0)
 }
 
+func escapeArg(s string) string {
+	b := make([]byte, 0, len(s)+2)
+	b = append(b, '"')
+	slashes := 0
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		switch c {
+		default:
+			slashes = 0
+		case '\\':
+			slashes++
+		case '&', '|', '<', '>', '(', ')', '@', '^', '%', '!':
+			b = append(b, '^')
+		case '"':
+			for ; slashes > 0; slashes-- {
+				b = append(b, '\\')
+			}
+			b = append(b, '\\')
+		}
+		b = append(b, c)
+	}
+	for ; slashes > 0; slashes-- {
+		b = append(b, '\\')
+	}
+	b = append(b, '"')
+	return string(b)
+}
+
 func (x *Executor) QuoteEntry(entry string) string {
 	switch x.shellType {
 	case shellTypeCmd:
-		// backslash escaping is done here for applications
-		// (see ripgrep test case in terminal_test.go#TestWindowsCommands)
-		escaped := strings.Replace(entry, `\`, `\\`, -1)
-		escaped = `"` + strings.Replace(escaped, `"`, `\"`, -1) + `"`
-		// caret is the escape character for cmd shell
-		r, _ := regexp.Compile(`[&|<>()@^%!"]`)
-		return r.ReplaceAllStringFunc(escaped, func(match string) string {
-			return "^" + match
-		})
+		/* Manually tested with the following commands:
+		   fzf --preview "echo {}"
+		   fzf --preview "type {}"
+		   echo .git\refs\| fzf --preview "dir {}"
+		   echo .git\refs\\| fzf --preview "dir {}"
+		   echo .git\refs\\\| fzf --preview "dir {}"
+		   reg query HKCU | fzf --reverse --bind "enter:reload(reg query {})"
+		   fzf --disabled --preview "echo {q} {n} {}" --query "&|<>()@^%!"
+		   fd -H --no-ignore -td -d 4 | fzf --preview "dir {}"
+		   fd -H --no-ignore -td -d 4 | fzf --preview "eza {}" --preview-window up
+		   fd -H --no-ignore -td -d 4 | fzf --preview "eza --color=always --tree --level=3 --icons=always {}"
+		   fd -H --no-ignore -td -d 4 | fzf --preview ".\eza.exe --color=always --tree --level=3 --icons=always {}" --with-shell "powershell -NoProfile -Command"
+		*/
+		return escapeArg(entry)
 	case shellTypePowerShell:
 		escaped := strings.Replace(entry, `"`, `\"`, -1)
 		return "'" + strings.Replace(escaped, "'", "''", -1) + "'"
