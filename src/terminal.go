@@ -298,6 +298,8 @@ type Terminal struct {
 	areaLines          int
 	areaColumns        int
 	forcePreview       bool
+	clickHeaderLine    int
+	clickHeaderColumn  int
 }
 
 type selectedItem struct {
@@ -857,6 +859,8 @@ func (t *Terminal) environ() []string {
 	env = append(env, fmt.Sprintf("FZF_LINES=%d", t.areaLines))
 	env = append(env, fmt.Sprintf("FZF_COLUMNS=%d", t.areaColumns))
 	env = append(env, fmt.Sprintf("FZF_POS=%d", util.Min(t.merger.Length(), t.cy+1)))
+	env = append(env, fmt.Sprintf("FZF_CLICK_HEADER_LINE=%d", t.clickHeaderLine))
+	env = append(env, fmt.Sprintf("FZF_CLICK_HEADER_COLUMN=%d", t.clickHeaderColumn))
 	return env
 }
 
@@ -1288,7 +1292,8 @@ func (t *Terminal) resizeWindows(forcePreview bool) {
 		t.pborder.Close()
 		t.pborder = nil
 	}
-	if t.pwindow != nil {
+	hadPreviewWindow := t.hasPreviewWindow()
+	if hadPreviewWindow {
 		t.pwindow.Close()
 		t.pwindow = nil
 	}
@@ -1387,6 +1392,9 @@ func (t *Terminal) resizeWindows(forcePreview bool) {
 				pwidth = util.Max(0, pwidth)
 				pheight = util.Max(0, pheight)
 				t.pwindow = t.tui.NewWindow(y, x, pwidth, pheight, true, noBorder)
+				if !hadPreviewWindow {
+					t.pwindow.Erase()
+				}
 			}
 			verticalPad := 2
 			minPreviewHeight := 3
@@ -1452,6 +1460,14 @@ func (t *Terminal) resizeWindows(forcePreview bool) {
 					// Add a 1-column margin between the preview window and the main window
 					t.window = t.tui.NewWindow(
 						marginInt[0], marginInt[3]+pwidth+1, width-pwidth-1, height, false, noBorder)
+
+					// Clear characters on the margin
+					//   fzf --bind 'space:preview(seq 100)' --preview-window left,1
+					for y := 0; y < height; y++ {
+						t.window.Move(y, -1)
+						t.window.Print(" ")
+					}
+
 					createPreviewWindow(marginInt[0], marginInt[3], pwidth, height)
 				} else {
 					t.window = t.tui.NewWindow(
@@ -1486,10 +1502,6 @@ func (t *Terminal) resizeWindows(forcePreview bool) {
 	// Print border label
 	t.printLabel(t.border, t.borderLabel, t.borderLabelOpts, t.borderLabelLen, t.borderShape, false)
 	t.printLabel(t.pborder, t.previewLabel, t.previewLabelOpts, t.previewLabelLen, t.previewOpts.border, false)
-
-	for i := 0; i < t.window.Height(); i++ {
-		t.window.MoveAndClear(i, 0)
-	}
 }
 
 func (t *Terminal) printLabel(window tui.Window, render labelPrinter, opts labelOpts, length int, borderShape tui.BorderShape, redrawBorder bool) {
@@ -1645,7 +1657,7 @@ func (t *Terminal) printInfo() {
 	case infoDefault:
 		t.move(line+1, 0, t.separatorLen == 0)
 		printSpinner()
-		t.move(line+1, 2, false)
+		t.window.Print(" ") // Margin
 		pos = 2
 	case infoRight:
 		t.move(line+1, 0, false)
@@ -1710,6 +1722,7 @@ func (t *Terminal) printInfo() {
 			printSeparator(fillLength, true)
 		}
 		t.window.CPrint(tui.ColInfo, output)
+		t.window.Print(" ") // Margin
 		return
 	}
 
@@ -2918,6 +2931,7 @@ func (t *Terminal) Loop() {
 		t.initFunc()
 		t.termSize = t.tui.Size()
 		t.resizeWindows(false)
+		t.window.Erase()
 		t.printPrompt()
 		t.printInfo()
 		t.printHeader()
@@ -3991,10 +4005,10 @@ func (t *Terminal) Loop() {
 				}
 
 				if me.Down {
-					mx = util.Constrain(mx-t.promptLen, 0, len(t.input))
-					if my == t.promptLine() && mx >= 0 {
+					mx_cons := util.Constrain(mx-t.promptLen, 0, len(t.input))
+					if my == t.promptLine() && mx_cons >= 0 {
 						// Prompt
-						t.cx = mx + t.xoffset
+						t.cx = mx_cons + t.xoffset
 					} else if my >= min {
 						t.vset(t.offset + my - min)
 						req(reqList)
@@ -4009,6 +4023,34 @@ func (t *Terminal) Loop() {
 							}
 						}
 						return doActions(actionsFor(evt))
+					} else {
+						// Header
+						lineOffset := 0
+						numLines := t.visibleHeaderLines()
+						if !t.headerFirst {
+							// offset for info line
+							if t.noSeparatorLine() {
+								lineOffset = 1
+							} else {
+								lineOffset = 2
+							}
+						} else {
+							// adjust for too-small window
+							numItems := t.areaLines - numLines
+							if !t.noSeparatorLine() {
+								numItems -= 1
+							}
+							if numItems < 0 {
+								numLines += numItems
+							}
+						}
+						my = util.Constrain(my-lineOffset, -1, numLines)
+						mx -= 2 // offset gutter
+						if my >= 0 && my < numLines && mx >= 0 {
+							t.clickHeaderLine = my + 1
+							t.clickHeaderColumn = mx + 1
+							return doActions(actionsFor(tui.ClickHeader))
+						}
 					}
 				}
 			case actReload, actReloadSync:
