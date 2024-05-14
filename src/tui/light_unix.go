@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"sync"
 	"syscall"
 
 	"github.com/junegunn/fzf/src/util"
@@ -14,7 +15,12 @@ import (
 	"golang.org/x/term"
 )
 
-var tty string
+var (
+	tty    string
+	ttyin  *os.File
+	ttyout *os.File
+	mutex  sync.Mutex
+)
 
 func IsLightRendererSupported() bool {
 	return true
@@ -47,8 +53,7 @@ func (r *LightRenderer) initPlatform() error {
 }
 
 func (r *LightRenderer) closePlatform() {
-	r.ttyin.Close()
-	r.ttyout.Close()
+	// NOOP
 }
 
 func openTty(mode int) (*os.File, error) {
@@ -68,11 +73,31 @@ func openTty(mode int) (*os.File, error) {
 }
 
 func openTtyIn() (*os.File, error) {
-	return openTty(syscall.O_RDONLY)
+	mutex.Lock()
+	defer mutex.Unlock()
+
+	if ttyin != nil {
+		return ttyin, nil
+	}
+	in, err := openTty(syscall.O_RDONLY)
+	if err == nil {
+		ttyin = in
+	}
+	return in, err
 }
 
 func openTtyOut() (*os.File, error) {
-	return openTty(syscall.O_WRONLY)
+	mutex.Lock()
+	defer mutex.Unlock()
+
+	if ttyout != nil {
+		return ttyout, nil
+	}
+	out, err := openTty(syscall.O_WRONLY)
+	if err == nil {
+		ttyout = out
+	}
+	return out, err
 }
 
 func (r *LightRenderer) setupTerminal() {
