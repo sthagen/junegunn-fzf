@@ -156,10 +156,12 @@ func Run(opts *Options) (int, error) {
 		if err != nil {
 			return ExitError, err
 		}
-		initialEnv = terminal.environ()
-		var temps []string
-		initialReload, temps = terminal.replacePlaceholderInInitialCommand(initialReload)
-		defer removeFiles(temps)
+		if len(initialReload) > 0 {
+			var temps []string
+			initialReload, temps = terminal.replacePlaceholderInInitialCommand(initialReload)
+			initialEnv = terminal.environ()
+			defer removeFiles(temps)
+		}
 	}
 
 	// Reader
