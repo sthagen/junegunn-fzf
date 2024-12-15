@@ -1531,27 +1531,24 @@ func (t *Terminal) adjustMarginAndPadding() (int, int, [4]int, [4]int) {
 	return screenWidth, screenHeight, marginInt, paddingInt
 }
 
-func (t *Terminal) resizeWindows(forcePreview bool) {
+func (t *Terminal) resizeWindows(forcePreview bool, redrawBorder bool) {
 	t.forcePreview = forcePreview
 	screenWidth, screenHeight, marginInt, paddingInt := t.adjustMarginAndPadding()
 	width := screenWidth - marginInt[1] - marginInt[3]
 	height := screenHeight - marginInt[0] - marginInt[2]
 
 	t.prevLines = make([]itemLine, screenHeight)
-	if t.border != nil {
-		t.border.Close()
+	if t.border != nil && redrawBorder {
+		t.border = nil
 	}
 	if t.window != nil {
-		t.window.Close()
 		t.window = nil
 	}
 	if t.pborder != nil {
-		t.pborder.Close()
 		t.pborder = nil
 	}
 	hadPreviewWindow := t.hasPreviewWindow()
 	if hadPreviewWindow {
-		t.pwindow.Close()
 		t.pwindow = nil
 	}
 	// Reset preview version so that full redraw occurs
@@ -1573,7 +1570,7 @@ func (t *Terminal) resizeWindows(forcePreview bool) {
 		offsets[1] -= 1 + bw
 		offsets[2] += 1 + bw
 	}
-	if t.borderShape != tui.BorderNone {
+	if t.border == nil && t.borderShape != tui.BorderNone {
 		t.border = t.tui.NewWindow(
 			marginInt[0]+offsets[0], marginInt[3]+offsets[1], width+offsets[2], height+offsets[3],
 			false, tui.MakeBorderStyle(t.borderShape, t.unicode))
@@ -2116,9 +2113,9 @@ func (t *Terminal) printList() {
 
 func (t *Terminal) printBar(lineNum int, forceRedraw bool, barRange [2]int) bool {
 	hasBar := lineNum >= barRange[0] && lineNum < barRange[1]
-	if len(t.scrollbar) > 0 && (hasBar != t.prevLines[lineNum].hasBar || forceRedraw) {
+	if hasBar != t.prevLines[lineNum].hasBar || forceRedraw {
 		t.move(lineNum, t.window.Width()-1, true)
-		if hasBar {
+		if len(t.scrollbar) > 0 && hasBar {
 			t.window.CPrint(tui.ColScrollbar, t.scrollbar)
 		}
 	}
@@ -2935,7 +2932,7 @@ func (t *Terminal) processTabs(runes []rune, prefixWidth int) (string, int) {
 }
 
 func (t *Terminal) printAll() {
-	t.resizeWindows(t.forcePreview)
+	t.resizeWindows(t.forcePreview, true)
 	t.printList()
 	t.printPrompt()
 	t.printInfo()
@@ -3561,7 +3558,7 @@ func (t *Terminal) Loop() error {
 			return err
 		}
 		t.termSize = t.tui.Size()
-		t.resizeWindows(false)
+		t.resizeWindows(false, false)
 		t.window.Erase()
 		t.mutex.Unlock()
 
@@ -4037,7 +4034,7 @@ func (t *Terminal) Loop() error {
 			}
 		}
 		updatePreviewWindow := func(forcePreview bool) {
-			t.resizeWindows(forcePreview)
+			t.resizeWindows(forcePreview, false)
 			req(reqPrompt, reqList, reqInfo, reqHeader)
 		}
 		toggle := func() bool {

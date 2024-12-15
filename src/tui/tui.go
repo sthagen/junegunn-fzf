@@ -412,7 +412,7 @@ type BorderCharacter int
 func MakeBorderStyle(shape BorderShape, unicode bool) BorderStyle {
 	if shape == BorderNone {
 		return BorderStyle{
-			shape:       BorderRounded,
+			shape:       shape,
 			top:         ' ',
 			bottom:      ' ',
 			left:        ' ',
@@ -559,7 +559,6 @@ type Window interface {
 	DrawHBorder()
 	Refresh()
 	FinishFill()
-	Close()
 
 	X() int
 	Y() int
