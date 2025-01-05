@@ -67,6 +67,7 @@ Usage: fzf [options]
     --jump-labels=CHARS      Label characters for jump mode
 
   Layout
+    --style=PRESET           Apply a style preset [default|minimal|full]
     --height=[~]HEIGHT[%]    Display fzf window below the cursor with the given
                              height instead of using fullscreen.
                              A negative value is calculated as the terminal height
@@ -100,6 +101,14 @@ Usage: fzf [options]
                               top|bottom|left|right|none] (default: rounded)
     --input-label=LABEL      Label to print on the input border
     --input-label-pos=COL    Position of the input label
+                             [POSITIVE_INTEGER: columns from left|
+                              NEGATIVE_INTEGER: columns from right][:bottom]
+                             (default: 0 or center)
+    --header-border[=STYLE]  Draw border around the header section
+                             [rounded|sharp|bold|block|thinblock|double|horizontal|vertical|
+                              top|bottom|left|right|none] (default: rounded)
+    --header-label=LABEL     Label to print on the header border
+    --header-label-pos=COL   Position of the header label
                              [POSITIVE_INTEGER: columns from left|
                               NEGATIVE_INTEGER: columns from right][:bottom]
                              (default: 0 or center)
@@ -138,10 +147,12 @@ Usage: fzf [options]
     --preview-window=OPT     Preview window layout (default: right:50%)
                              [up|down|left|right][,SIZE[%]]
                              [,[no]wrap][,[no]cycle][,[no]follow][,[no]info]
-                             [,[no]hidden][,border-BORDER_OPT]
+                             [,[no]hidden][,border-STYLE]
                              [,+SCROLL[OFFSETS][/DENOM]][,~HEADER_LINES]
                              [,default][,<SIZE_THRESHOLD(ALTERNATIVE_LAYOUT)]
     --preview-border[=STYLE] Short for --preview-window=border-STYLE
+                             [rounded|sharp|bold|block|thinblock|double|horizontal|vertical|
+                              top|bottom|left|right|line|none] (default: rounded)
     --preview-label=LABEL
     --preview-label-pos=N    Same as --border-label and --border-label-pos,
                              but for preview window
@@ -303,6 +314,10 @@ func (o *previewOpts) Visible() bool {
 
 func (o *previewOpts) Toggle() {
 	o.hidden = !o.hidden
+}
+
+func (o *previewOpts) HasBorderRight() bool {
+	return o.border.HasRight() || o.border == tui.BorderLine && o.position == posLeft
 }
 
 func defaultTmuxOptions(index int) *tmuxOptions {
@@ -467,104 +482,106 @@ type walkerOpts struct {
 
 // Options stores the values of command-line options
 type Options struct {
-	Input            chan string
-	Output           chan string
-	NoWinpty         bool
-	Tmux             *tmuxOptions
-	ForceTtyIn       bool
-	ProxyScript      string
-	Bash             bool
-	Zsh              bool
-	Fish             bool
-	Man              bool
-	Fuzzy            bool
-	FuzzyAlgo        algo.Algo
-	Scheme           string
-	Extended         bool
-	Phony            bool
-	Case             Case
-	Normalize        bool
-	Nth              []Range
-	WithNth          []Range
-	Delimiter        Delimiter
-	Sort             int
-	Track            trackOption
-	Tac              bool
-	Tail             int
-	Criteria         []criterion
-	Multi            int
-	Ansi             bool
-	Mouse            bool
-	Theme            *tui.ColorTheme
-	Black            bool
-	Bold             bool
-	Height           heightSpec
-	MinHeight        int
-	Layout           layoutType
-	Cycle            bool
-	Wrap             bool
-	WrapSign         *string
-	MultiLine        bool
-	CursorLine       bool
-	KeepRight        bool
-	Hscroll          bool
-	HscrollOff       int
-	ScrollOff        int
-	FileWord         bool
-	InfoStyle        infoStyle
-	InfoPrefix       string
-	InfoCommand      string
-	Separator        *string
-	JumpLabels       string
-	Prompt           string
-	Pointer          *string
-	Marker           *string
-	MarkerMulti      *[3]string
-	Query            string
-	Select1          bool
-	Exit0            bool
-	Filter           *string
-	ToggleSort       bool
-	Expect           map[tui.Event]string
-	Keymap           map[tui.Event][]*action
-	Preview          previewOpts
-	PrintQuery       bool
-	ReadZero         bool
-	Printer          func(string)
-	PrintSep         string
-	Sync             bool
-	History          *History
-	Header           []string
-	HeaderLines      int
-	HeaderFirst      bool
-	Gap              int
-	Ellipsis         *string
-	Scrollbar        *string
-	Margin           [4]sizeSpec
-	Padding          [4]sizeSpec
-	BorderShape      tui.BorderShape
-	ListBorderShape  tui.BorderShape
-	InputBorderShape tui.BorderShape
-	InputLabel       labelOpts
-	BorderLabel      labelOpts
-	ListLabel        labelOpts
-	PreviewLabel     labelOpts
-	Unicode          bool
-	Ambidouble       bool
-	Tabstop          int
-	WithShell        string
-	ListenAddr       *listenAddress
-	Unsafe           bool
-	ClearOnExit      bool
-	WalkerOpts       walkerOpts
-	WalkerRoot       []string
-	WalkerSkip       []string
-	Version          bool
-	Help             bool
-	CPUProfile       string
-	MEMProfile       string
-	BlockProfile     string
-	MutexProfile     string
+	Input             chan string
+	Output            chan string
+	NoWinpty          bool
+	Tmux              *tmuxOptions
+	ForceTtyIn        bool
+	ProxyScript       string
+	Bash              bool
+	Zsh               bool
+	Fish              bool
+	Man               bool
+	Fuzzy             bool
+	FuzzyAlgo         algo.Algo
+	Scheme            string
+	Extended          bool
+	Phony             bool
+	Case              Case
+	Normalize         bool
+	Nth               []Range
+	WithNth           []Range
+	Delimiter         Delimiter
+	Sort              int
+	Track             trackOption
+	Tac               bool
+	Tail              int
+	Criteria          []criterion
+	Multi             int
+	Ansi              bool
+	Mouse             bool
+	Theme             *tui.ColorTheme
+	Black             bool
+	Bold              bool
+	Height            heightSpec
+	MinHeight         int
+	Layout            layoutType
+	Cycle             bool
+	Wrap              bool
+	WrapSign          *string
+	MultiLine         bool
+	CursorLine        bool
+	KeepRight         bool
+	Hscroll           bool
+	HscrollOff        int
+	ScrollOff         int
+	FileWord          bool
+	InfoStyle         infoStyle
+	InfoPrefix        string
+	InfoCommand       string
+	Separator         *string
+	JumpLabels        string
+	Prompt            string
+	Pointer           *string
+	Marker            *string
+	MarkerMulti       *[3]string
+	Query             string
+	Select1           bool
+	Exit0             bool
+	Filter            *string
+	ToggleSort        bool
+	Expect            map[tui.Event]string
+	Keymap            map[tui.Event][]*action
+	Preview           previewOpts
+	PrintQuery        bool
+	ReadZero          bool
+	Printer           func(string)
+	PrintSep          string
+	Sync              bool
+	History           *History
+	Header            []string
+	HeaderLines       int
+	HeaderFirst       bool
+	Gap               int
+	Ellipsis          *string
+	Scrollbar         *string
+	Margin            [4]sizeSpec
+	Padding           [4]sizeSpec
+	BorderShape       tui.BorderShape
+	ListBorderShape   tui.BorderShape
+	InputBorderShape  tui.BorderShape
+	HeaderBorderShape tui.BorderShape
+	InputLabel        labelOpts
+	HeaderLabel       labelOpts
+	BorderLabel       labelOpts
+	ListLabel         labelOpts
+	PreviewLabel      labelOpts
+	Unicode           bool
+	Ambidouble        bool
+	Tabstop           int
+	WithShell         string
+	ListenAddr        *listenAddress
+	Unsafe            bool
+	ClearOnExit       bool
+	WalkerOpts        walkerOpts
+	WalkerRoot        []string
+	WalkerSkip        []string
+	Version           bool
+	Help              bool
+	CPUProfile        string
+	MEMProfile        string
+	BlockProfile      string
+	MutexProfile      string
 }
 
 func filterNonEmpty(input []string) []string {
@@ -822,8 +839,13 @@ func processScheme(opts *Options) error {
 	return nil
 }
 
-func parseBorder(str string, optional bool) (tui.BorderShape, error) {
+func parseBorder(str string, optional bool, allowLine bool) (tui.BorderShape, error) {
 	switch str {
+	case "line":
+		if !allowLine {
+			return tui.BorderNone, errors.New("'line' is only allowed for preview border")
+		}
+		return tui.BorderLine, nil
 	case "rounded":
 		return tui.BorderRounded, nil
 	case "sharp":
@@ -1251,6 +1273,10 @@ func parseTheme(defaultTheme *tui.ColorTheme, str string) (*tui.ColorTheme, erro
 				mergeAttr(&theme.InputBorder)
 			case "input-label":
 				mergeAttr(&theme.InputLabel)
+			case "header-border":
+				mergeAttr(&theme.HeaderBorder)
+			case "header-label":
+				mergeAttr(&theme.HeaderLabel)
 			case "spinner":
 				mergeAttr(&theme.Spinner)
 			case "info":
@@ -1259,8 +1285,10 @@ func parseTheme(defaultTheme *tui.ColorTheme, str string) (*tui.ColorTheme, erro
 				mergeAttr(&theme.Cursor)
 			case "marker":
 				mergeAttr(&theme.Marker)
-			case "header":
+			case "header", "header-fg":
 				mergeAttr(&theme.Header)
+			case "header-bg":
+				mergeAttr(&theme.HeaderBg)
 			default:
 				fail()
 			}
@@ -1314,7 +1342,7 @@ const (
 
 func init() {
 	executeRegexp = regexp.MustCompile(
-		`(?si)[:+](become|execute(?:-multi|-silent)?|reload(?:-sync)?|preview|(?:change|transform)-(?:header|query|prompt|border-label|list-label|preview-label|input-label)|transform|change-(?:preview-window|preview|multi)|(?:re|un)bind|pos|put|print)`)
+		`(?si)[:+](become|execute(?:-multi|-silent)?|reload(?:-sync)?|preview|(?:change|transform)-(?:query|prompt|(?:border|list|preview|input|header)-label|header)|transform|change-(?:preview-window|preview|multi)|(?:re|un)bind|pos|put|print)`)
 	splitRegexp = regexp.MustCompile("[,:]+")
 	actionNameRegexp = regexp.MustCompile("(?i)^[a-z-]+")
 }
@@ -1680,6 +1708,8 @@ func isExecuteAction(str string) actionType {
 		return actChangePreviewLabel
 	case "change-input-label":
 		return actChangeInputLabel
+	case "change-header-label":
+		return actChangeHeaderLabel
 	case "change-preview-window":
 		return actChangePreviewWindow
 	case "change-preview":
@@ -1712,6 +1742,8 @@ func isExecuteAction(str string) actionType {
 		return actTransformPreviewLabel
 	case "transform-input-label":
 		return actTransformInputLabel
+	case "transform-header-label":
+		return actTransformHeaderLabel
 	case "transform-header":
 		return actTransformHeader
 	case "transform-prompt":
@@ -1880,6 +1912,8 @@ func parsePreviewWindowImpl(opts *previewOpts, input string) error {
 			opts.position = posRight
 		case "rounded", "border", "border-rounded":
 			opts.border = tui.BorderRounded
+		case "border-line":
+			opts.border = tui.BorderLine
 		case "sharp", "border-sharp":
 			opts.border = tui.BorderSharp
 		case "border-bold":
@@ -2481,7 +2515,7 @@ func parseOptions(index *int, opts *Options, allArgs []string) error {
 		case "--no-preview":
 			opts.Preview.command = ""
 		case "--preview-window":
-			str, err := nextString(allArgs, &i, "preview window layout required: [up|down|left|right][,SIZE[%]][,border-BORDER_OPT][,wrap][,cycle][,hidden][,+SCROLL[OFFSETS][/DENOM]][,~HEADER_LINES][,default]")
+			str, err := nextString(allArgs, &i, "preview window layout required: [up|down|left|right][,SIZE[%]][,border-STYLE][,wrap][,cycle][,hidden][,+SCROLL[OFFSETS][/DENOM]][,~HEADER_LINES][,default]")
 			if err != nil {
 				return err
 			}
@@ -2492,7 +2526,7 @@ func parseOptions(index *int, opts *Options, allArgs []string) error {
 			opts.Preview.border = tui.BorderNone
 		case "--preview-border":
 			hasArg, arg := optionalNextString(allArgs, &i)
-			if opts.Preview.border, err = parseBorder(arg, !hasArg); err != nil {
+			if opts.Preview.border, err = parseBorder(arg, !hasArg, true); err != nil {
 				return err
 			}
 		case "--height":
@@ -2517,12 +2551,12 @@ func parseOptions(index *int, opts *Options, allArgs []string) error {
 			opts.BorderShape = tui.BorderNone
 		case "--border":
 			hasArg, arg := optionalNextString(allArgs, &i)
-			if opts.BorderShape, err = parseBorder(arg, !hasArg); err != nil {
+			if opts.BorderShape, err = parseBorder(arg, !hasArg, false); err != nil {
 				return err
 			}
 		case "--list-border":
 			hasArg, arg := optionalNextString(allArgs, &i)
-			if opts.ListBorderShape, err = parseBorder(arg, !hasArg); err != nil {
+			if opts.ListBorderShape, err = parseBorder(arg, !hasArg, false); err != nil {
 				return err
 			}
 		case "--no-list-border":
@@ -2542,11 +2576,32 @@ func parseOptions(index *int, opts *Options, allArgs []string) error {
 			if err := parseLabelPosition(&opts.ListLabel, pos); err != nil {
 				return err
 			}
+		case "--no-header-border":
+			opts.HeaderBorderShape = tui.BorderNone
+		case "--header-border":
+			hasArg, arg := optionalNextString(allArgs, &i)
+			if opts.HeaderBorderShape, err = parseBorder(arg, !hasArg, false); err != nil {
+				return err
+			}
+		case "--no-header-label":
+			opts.HeaderLabel.label = ""
+		case "--header-label":
+			if opts.HeaderLabel.label, err = nextString(allArgs, &i, "header label required"); err != nil {
+				return err
+			}
+		case "--header-label-pos":
+			pos, err := nextString(allArgs, &i, "header label position required (positive or negative integer or 'center')")
+			if err != nil {
+				return err
+			}
+			if err := parseLabelPosition(&opts.HeaderLabel, pos); err != nil {
+				return err
+			}
 		case "--no-input-border":
 			opts.InputBorderShape = tui.BorderNone
 		case "--input-border":
 			hasArg, arg := optionalNextString(allArgs, &i)
-			if opts.InputBorderShape, err = parseBorder(arg, !hasArg); err != nil {
+			if opts.InputBorderShape, err = parseBorder(arg, !hasArg, false); err != nil {
 				return err
 			}
 		case "--no-input-label":
@@ -2590,6 +2645,14 @@ func parseOptions(index *int, opts *Options, allArgs []string) error {
 				return err
 			}
 			if err := parseLabelPosition(&opts.PreviewLabel, pos); err != nil {
+				return err
+			}
+		case "--style":
+			preset, err := nextString(allArgs, &i, "preset name required: [default|minimal|full]")
+			if err != nil {
+				return err
+			}
+			if err := applyPreset(opts, preset); err != nil {
 				return err
 			}
 		case "--no-unicode":
@@ -2688,6 +2751,10 @@ func parseOptions(index *int, opts *Options, allArgs []string) error {
 				if opts.Tmux, err = parseTmuxOptions(value, index); err != nil {
 					return err
 				}
+			} else if match, value := optString(arg, "--style="); match {
+				if err := applyPreset(opts, value); err != nil {
+					return err
+				}
 			} else if match, value := optString(arg, "--scheme="); match {
 				opts.Scheme = strings.ToLower(value)
 			} else if match, value := optString(arg, "-q", "--query="); match {
@@ -2697,15 +2764,15 @@ func parseOptions(index *int, opts *Options, allArgs []string) error {
 			} else if match, value := optString(arg, "-d", "--delimiter="); match {
 				opts.Delimiter = delimiterRegexp(value)
 			} else if match, value := optString(arg, "--border="); match {
-				if opts.BorderShape, err = parseBorder(value, false); err != nil {
+				if opts.BorderShape, err = parseBorder(value, false, false); err != nil {
 					return err
 				}
 			} else if match, value := optString(arg, "--preview-border="); match {
-				if opts.Preview.border, err = parseBorder(value, false); err != nil {
+				if opts.Preview.border, err = parseBorder(value, false, true); err != nil {
 					return err
 				}
 			} else if match, value := optString(arg, "--list-border="); match {
-				if opts.ListBorderShape, err = parseBorder(value, false); err != nil {
+				if opts.ListBorderShape, err = parseBorder(value, false, false); err != nil {
 					return err
 				}
 			} else if match, value := optString(arg, "--list-label="); match {
@@ -2715,7 +2782,7 @@ func parseOptions(index *int, opts *Options, allArgs []string) error {
 					return err
 				}
 			} else if match, value := optString(arg, "--input-border="); match {
-				if opts.InputBorderShape, err = parseBorder(value, false); err != nil {
+				if opts.InputBorderShape, err = parseBorder(value, false, false); err != nil {
 					return err
 				}
 			} else if match, value := optString(arg, "--input-label="); match {
@@ -2936,6 +3003,48 @@ func parseOptions(index *int, opts *Options, allArgs []string) error {
 	return err
 }
 
+func applyPreset(opts *Options, preset string) error {
+	switch strings.ToLower(preset) {
+	case "default":
+		opts.ListBorderShape = tui.BorderUndefined
+		opts.InputBorderShape = tui.BorderUndefined
+		opts.HeaderBorderShape = tui.BorderUndefined
+		opts.Preview.border = tui.DefaultBorderShape
+		opts.Preview.info = true
+		opts.InfoStyle = infoDefault
+		opts.Theme.Gutter = tui.NewColorAttr()
+		opts.Separator = nil
+		opts.Scrollbar = nil
+		opts.CursorLine = false
+	case "minimal":
+		opts.ListBorderShape = tui.BorderUndefined
+		opts.InputBorderShape = tui.BorderUndefined
+		opts.HeaderBorderShape = tui.BorderUndefined
+		opts.Preview.border = tui.BorderLine
+		opts.Preview.info = false
+		opts.InfoStyle = infoDefault
+		opts.Theme.Gutter = tui.ColorAttr{Color: -1, Attr: 0}
+		empty := ""
+		opts.Separator = &empty
+		opts.Scrollbar = &empty
+		opts.CursorLine = false
+	case "full":
+		opts.ListBorderShape = tui.DefaultBorderShape
+		opts.InputBorderShape = tui.DefaultBorderShape
+		opts.HeaderBorderShape = tui.DefaultBorderShape
+		opts.Preview.border = tui.DefaultBorderShape
+		opts.Preview.info = true
+		opts.InfoStyle = infoInlineRight
+		opts.Theme.Gutter = tui.NewColorAttr()
+		opts.Separator = nil
+		opts.Scrollbar = nil
+		opts.CursorLine = true
+	default:
+		return errors.New("unsupported style preset: " + preset)
+	}
+	return nil
+}
+
 func validateSign(sign string, signOptName string) error {
 	if uniseg.StringWidth(sign) > 2 {
 		return fmt.Errorf("%v display width should be up to 2", signOptName)
@@ -3001,6 +3110,10 @@ func postProcessOptions(opts *Options) error {
 
 	if opts.InputBorderShape == tui.BorderUndefined {
 		opts.InputBorderShape = tui.BorderNone
+	}
+
+	if opts.HeaderBorderShape == tui.BorderUndefined {
+		opts.HeaderBorderShape = tui.BorderNone
 	}
 
 	if opts.Pointer == nil {
