@@ -299,6 +299,7 @@ type Terminal struct {
 	scrollbar          string
 	previewScrollbar   string
 	ansi               bool
+	nth                []Range
 	tabstop            int
 	margin             [4]sizeSpec
 	padding            [4]sizeSpec
@@ -462,6 +463,7 @@ const (
 	actChangePreviewLabel
 	actChangePrompt
 	actChangeQuery
+	actChangeNth
 	actClearScreen
 	actClearQuery
 	actClearSelection
@@ -597,6 +599,7 @@ type placeholderFlags struct {
 type searchRequest struct {
 	sort    bool
 	sync    bool
+	nth     *[]Range
 	command *commandSpec
 	environ []string
 	changed bool
@@ -880,6 +883,7 @@ func NewTerminal(opts *Options, eventBox *util.EventBox, executor *util.Executor
 		header:             []string{},
 		header0:            opts.Header,
 		ansi:               opts.Ansi,
+		nth:                opts.Nth,
 		tabstop:            opts.Tabstop,
 		hasStartActions:    false,
 		hasResultActions:   false,
@@ -2391,9 +2395,19 @@ func (t *Terminal) printHeaderImpl() {
 	}
 	// Wrapping is not supported for header
 	wrap := t.wrap
+
+	// Align header with the list
+	//   fzf --header-lines 3 --style full --no-list-border
+	//   fzf --header-lines 3 --style full --no-header-border
+	//   fzf --header-lines 3 --style full --no-header-border --no-input-border
 	indentSize := t.pointerLen + t.markerLen
-	if t.headerBorderShape.HasLeft() && !t.listBorderShape.HasLeft() {
-		indentSize = util.Max(0, indentSize-(1+t.borderWidth))
+	if t.headerWindow != nil {
+		if t.listBorderShape.HasLeft() {
+			indentSize += 1 + t.borderWidth
+		}
+		if t.headerBorderShape.HasLeft() {
+			indentSize -= 1 + t.borderWidth
+		}
 	}
 	indent := strings.Repeat(" ", indentSize)
 	t.wrap = false
@@ -4349,6 +4363,7 @@ func (t *Terminal) Loop() error {
 	}
 	for loopIndex := int64(0); looping; loopIndex++ {
 		var newCommand *commandSpec
+		var newNth *[]Range
 		var reloadSync bool
 		changed := false
 		beof := false
@@ -4608,6 +4623,22 @@ func (t *Terminal) Loop() error {
 				}
 				t.multi = multi
 				req(reqList, reqInfo)
+			case actChangeNth:
+				changed = true
+
+				// Split nth expression
+				tokens := strings.Split(a.a, "|")
+				if nth, err := splitNth(tokens[0]); err == nil {
+					// Changed
+					newNth = &nth
+				} else {
+					// The default
+					newNth = &t.nth
+				}
+				// Cycle
+				if len(tokens) > 1 {
+					a.a = strings.Join(append(tokens[1:], tokens[0]), "|")
+				}
 			case actChangeQuery:
 				t.input = []rune(a.a)
 				t.cx = len(t.input)
@@ -5527,7 +5558,7 @@ func (t *Terminal) Loop() error {
 		reload := changed || newCommand != nil
 		var reloadRequest *searchRequest
 		if reload {
-			reloadRequest = &searchRequest{sort: t.sort, sync: reloadSync, command: newCommand, environ: t.environ(), changed: changed}
+			reloadRequest = &searchRequest{sort: t.sort, sync: reloadSync, nth: newNth, command: newCommand, environ: t.environ(), changed: changed}
 		}
 		t.mutex.Unlock() // Must be unlocked before touching reqBox
 
