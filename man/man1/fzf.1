@@ -242,6 +242,7 @@ color mappings.
     \fBmarker                \fRMulti\-select marker
     \fBspinner               \fRStreaming input indicator
     \fBheader (header\-fg)   \fRHeader
+    \fBnth                   \fRParts of the line specified by \fB\-\-nth\fR (only supports attributes)
 
 .B ANSI COLORS:
     \fB\-1         \fRDefault terminal foreground/background color
@@ -542,6 +543,10 @@ e.g.
 .TP
 .BI "\-\-gap" "[=N]"
 Render empty lines between each item
+.TP
+.BI "\-\-gap\-line" "[=STR]"
+The given string will be repeated to draw a horizontal line on each gap
+(default: '┈' or '\-' depending on \fB\-\-no\-unicode\fR).
 .TP
 .B "\-\-keep\-right"
 Keep the right end of the line visible when it's too long. Effective only when

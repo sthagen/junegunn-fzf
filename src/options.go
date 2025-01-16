@@ -97,6 +97,8 @@ Usage: fzf [options]
     --track                  Track the current selection when the result is updated
     --tac                    Reverse the order of the input
     --gap[=N]                Render empty lines between each item
+    --gap-line[=STR]         Draw horizontal line on each gap using the string
+                             (default: '┈' or '-')
     --keep-right             Keep the right end of the line visible on overflow
     --scroll-off=LINES       Number of screen lines to keep above or below when
                              scrolling to the top or to the bottom (default: 0)
@@ -127,7 +129,8 @@ Usage: fzf [options]
     --info=STYLE             Finder info style
                              [default|right|hidden|inline[-right][:PREFIX]]
     --info-command=COMMAND   Command to generate info line
-    --separator=STR          String to form horizontal separator on info line
+    --separator=STR          Draw horizontal separator on info line using the string
+                             (default: '─' or '-')
     --no-separator           Hide info line separator
     --filepath-word          Make word-wise movements respect path separators
     --input-border[=STYLE]   Draw border around the input section
@@ -582,6 +585,7 @@ type Options struct {
 	HeaderLines       int
 	HeaderFirst       bool
 	Gap               int
+	GapLine           *string
 	Ellipsis          *string
 	Scrollbar         *string
 	Margin            [4]sizeSpec
@@ -1203,6 +1207,8 @@ func parseTheme(defaultTheme *tui.ColorTheme, str string) (*tui.ColorTheme, erro
 				mergeAttr(&theme.SelectedFg)
 			case "selected-bg":
 				mergeAttr(&theme.SelectedBg)
+			case "nth":
+				mergeAttr(&theme.Nth)
 			case "gutter":
 				mergeAttr(&theme.Gutter)
 			case "hl":
@@ -2567,6 +2573,15 @@ func parseOptions(index *int, opts *Options, allArgs []string) error {
 			}
 		case "--no-gap":
 			opts.Gap = 0
+		case "--gap-line":
+			if given, bar := optionalNextString(); given {
+				opts.GapLine = &bar
+			} else {
+				opts.GapLine = nil
+			}
+		case "--no-gap-line":
+			empty := ""
+			opts.GapLine = &empty
 		case "--ellipsis":
 			str, err := nextString("ellipsis string required")
 			if err != nil {
@@ -2953,6 +2968,10 @@ func validateOptions(opts *Options) error {
 		}
 	}
 
+	if opts.Theme.Nth.IsColorDefined() {
+		return errors.New("only ANSI attributes are allowed for 'nth' (regular, bold, underline, reverse, dim, italic, strikethrough)")
+	}
+
 	return nil
 }
 
@@ -2985,6 +3004,14 @@ func postProcessOptions(opts *Options) error {
 			defaultPointer = ">"
 		}
 		opts.Pointer = &defaultPointer
+	}
+
+	if opts.GapLine == nil {
+		defaultGapLine := "┈"
+		if !opts.Unicode {
+			defaultGapLine = "-"
+		}
+		opts.GapLine = &defaultGapLine
 	}
 
 	markerLen := 1
