@@ -740,6 +740,8 @@ Also,
 
 * \fB{q}\fR is replaced to the current query string
 .br
+* \fB{q}\fR can contain field index expressions. e.g. \fB{q:1}\fR, \fB{q:2..}\fR, etc.
+.br
 * \fB{n}\fR is replaced to the zero-based ordinal index of the current item.
   Use \fB{+n}\fR if you want all index numbers when multiple lines are selected.
 .br
@@ -1291,10 +1293,15 @@ more \fBactions\fR. You can use it to customize key bindings or implement
 dynamic behaviors.
 
 \fB\-\-bind\fR takes a comma-separated list of binding expressions. Each binding
-expression is \fBKEY:ACTION\fR or \fBEVENT:ACTION\fR.
+expression is \fBKEY:ACTION\fR or \fBEVENT:ACTION\fR. You can bind actions to
+multiple keys and events by writing comma-separated list of keys and events
+before the colon. e.g. \fBKEY1,KEY2,EVENT1,EVENT2:ACTION\fR.
 
 e.g.
-     \fBfzf \-\-bind=ctrl\-j:accept,ctrl\-k:kill\-line\fR
+     \fBfzf \-\-bind=ctrl\-j:accept,ctrl\-k:kill\-line
+
+     # Load 'ps \-ef' output on start and reload it on CTRL\-R
+     fzf \-\-bind 'start,ctrl\-r:reload:ps \-ef'\fR
 
 .SS AVAILABLE KEYS:    (SYNONYMS)
 \fIctrl\-[a\-z]\fR

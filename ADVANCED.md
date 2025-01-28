@@ -93,7 +93,7 @@ fzf --height=40% --layout=reverse --info=inline --border --margin=1 --padding=1
 
 ![image](https://user-images.githubusercontent.com/700826/113379932-dfeac200-93b5-11eb-9e28-df1a2ee71f90.png)
 
-*(See `Layout` section of the man page to see the full list of options)*
+*(See man page to see the full list of options)*
 
 But you definitely don't want to repeat `--height=40% --layout=reverse
 --info=inline --border --margin=1 --padding=1` every time you use fzf. You
@@ -515,27 +515,24 @@ remainder of the query is passed to fzf for secondary filtering.
 ```sh
 #!/usr/bin/env bash
 
-# Switch between Ripgrep mode and fzf filtering mode (CTRL-T)
-RG_PREFIX="rg --column --line-number --no-heading --color=always --smart-case "
 INITIAL_QUERY="${*:-}"
 TRANSFORMER='
-  words=($FZF_QUERY)
+  rg_pat={q:1}      # The first word is passed to ripgrep
+  fzf_pat={q:2..}   # The rest are passed to fzf
+  rg_pat_org={q:s1} # The first word with trailing whitespaces preserved.
+                    # We use this to avoid unnecessary reloading of ripgrep.
 
-  # If $FZF_QUERY contains multiple words, drop the first word,
-  # and trigger fzf search with the rest
-  if [[ ${#words[@]} -gt 1 ]]; then
-    echo "search:${FZF_QUERY#* }"
-
-  # Otherwise, if the query does not end with a space,
-  # restart ripgrep and reload the list
-  elif ! [[ $FZF_QUERY =~ \ $ ]]; then
-    echo "reload:sleep 0.1; $RG_PREFIX \"${words[0]}\" || true"
+  if [[ -n $fzf_pat ]]; then
+    echo "search:$fzf_pat"
+  elif ! [[ $rg_pat_org =~ \ $ ]]; then
+    printf "reload:sleep 0.1; rg --column --line-number --no-heading --color=always --smart-case %q || true" "$rg_pat"
+  else
+    echo search:
   fi
 '
 fzf --ansi --disabled --query "$INITIAL_QUERY" \
     --with-shell 'bash -c' \
-    --bind "start:transform:$TRANSFORMER" \
-    --bind "change:transform:$TRANSFORMER" \
+    --bind "start,change:transform:$TRANSFORMER" \
     --color "hl:-1:underline,hl+:-1:underline:reverse" \
     --delimiter : \
     --preview 'bat --color=always {1} --highlight-line {2}' \
@@ -572,8 +569,7 @@ pods() {
     --info=inline --layout=reverse --header-lines=1 \
     --prompt "$(kubectl config current-context | sed 's/-context$//')> " \
     --header $'╱ Enter (kubectl exec) ╱ CTRL-O (open log in editor) ╱ CTRL-R (reload) ╱\n\n' \
-    --bind 'start:reload:$command' \
-    --bind 'ctrl-r:reload:$command' \
+    --bind 'start,ctrl-r:reload:$command' \
     --bind 'ctrl-/:change-preview-window(80%,border-bottom|hidden|)' \
     --bind 'enter:execute:kubectl exec -it --namespace {1} {2} -- bash' \
     --bind 'ctrl-o:execute:${EDITOR:-vim} <(kubectl logs --all-containers --namespace {1} {2})' \

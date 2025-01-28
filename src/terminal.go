@@ -39,7 +39,7 @@ cases for example.
 
 	\\?(?:                                      # escaped type
 	    {\+?s?f?RANGE(?:,RANGE)*}               # token type
-	    |{q}                                    # query type
+	    {q[:s?RANGE]}                           # query type
 	    |{\+?n?f?}                              # item type (notice no mandatory element inside brackets)
 	)
 	RANGE = (?:
@@ -65,7 +65,7 @@ const maxFocusEvents = 10000
 const blockDuration = 1 * time.Second
 
 func init() {
-	placeholder = regexp.MustCompile(`\\?(?:{[+sf]*[0-9,-.]*}|{q}|{fzf:(?:query|action|prompt)}|{\+?f?nf?})`)
+	placeholder = regexp.MustCompile(`\\?(?:{[+sf]*[0-9,-.]*}|{q(?::s?[0-9,-.]+)?}|{fzf:(?:query|action|prompt)}|{\+?f?nf?})`)
 	whiteSuffix = regexp.MustCompile(`\s*$`)
 	offsetComponentRegex = regexp.MustCompile(`([+-][0-9]+)|(-?/[1-9][0-9]*)`)
 	offsetTrimCharsRegex = regexp.MustCompile(`[^0-9/+-]`)
@@ -799,7 +799,7 @@ func NewTerminal(opts *Options, eventBox *util.EventBox, executor *util.Executor
 			if previewBox != nil && opts.Preview.aboveOrBelow() {
 				effectiveMinHeight += 1 + borderLines(opts.Preview.Border())
 			}
-			if noSeparatorLine(opts.InfoStyle, opts.Separator == nil || uniseg.StringWidth(*opts.Separator) > 0) {
+			if opts.noSeparatorLine() {
 				effectiveMinHeight--
 			}
 			effectiveMinHeight += borderLines(opts.BorderShape)
@@ -1262,16 +1262,6 @@ func (t *Terminal) parsePrompt(prompt string) (func(), int) {
 	_, promptLen := t.processTabs([]rune(trimmed), 0)
 
 	return output, promptLen
-}
-
-func noSeparatorLine(style infoStyle, separator bool) bool {
-	switch style {
-	case infoInline:
-		return true
-	case infoHidden, infoInlineRight:
-		return !separator
-	}
-	return false
 }
 
 func (t *Terminal) noSeparatorLine() bool {
@@ -3621,28 +3611,26 @@ func parsePlaceholder(match string) (bool, string, placeholderFlags) {
 		return false, match, flags
 	}
 
-	skipChars := 1
+	trimmed := ""
 	for _, char := range match[1:] {
 		switch char {
 		case '+':
 			flags.plus = true
-			skipChars++
 		case 's':
 			flags.preserveSpace = true
-			skipChars++
 		case 'n':
 			flags.number = true
-			skipChars++
 		case 'f':
 			flags.file = true
-			skipChars++
 		case 'q':
 			flags.forceUpdate = true
-			// query flag is not skipped
+			trimmed += string(char)
+		default:
+			trimmed += string(char)
 		}
 	}
 
-	matchWithoutFlags := "{" + match[skipChars:]
+	matchWithoutFlags := "{" + trimmed
 
 	return false, matchWithoutFlags, flags
 }
@@ -3756,6 +3744,19 @@ func replacePlaceholder(params replacePlaceholderParams) (string, []string) {
 			return match
 		case match == "{q}" || match == "{fzf:query}":
 			return params.executor.QuoteEntry(params.query)
+		case strings.HasPrefix(match, "{q:"):
+			if nth, err := splitNth(match[3 : len(match)-1]); err == nil {
+				elems, prefixLength := awkTokenizer(params.query)
+				tokens := withPrefixLengths(elems, prefixLength)
+				trans := Transform(tokens, nth)
+				result := joinTokens(trans)
+				if !flags.preserveSpace {
+					result = strings.TrimSpace(result)
+				}
+				return params.executor.QuoteEntry(result)
+			}
+
+			return match
 		case match == "{}":
 			replace = func(item *Item) string {
 				switch {
@@ -4620,6 +4621,7 @@ func (t *Terminal) Loop() error {
 	pbarDragging := false
 	pborderDragging := -1
 	wasDown := false
+	pmx, pmy := -1, -1
 	needBarrier := true
 
 	// If an action is bound to 'start', we're going to process it before reading
@@ -5422,25 +5424,30 @@ func (t *Terminal) Loop() error {
 			case actMouse:
 				me := event.MouseEvent
 				mx, my := me.X, me.Y
-				clicked := !wasDown && me.Down
+				click := !wasDown && me.Down
+				clicked := wasDown && !me.Down && (mx == pmx && my == pmy)
 				wasDown = me.Down
+				if click {
+					pmx, pmy = mx, my
+				}
 				if !me.Down {
 					barDragging = false
 					pbarDragging = false
 					pborderDragging = -1
 					previewDraggingPos = -1
+					pmx, pmy = -1, -1
 				}
 
 				// Scrolling
 				if me.S != 0 {
 					if t.window.Enclose(my, mx) && t.merger.Length() > 0 {
 						evt := tui.ScrollUp
-						if me.Mod {
+						if me.Mod() {
 							evt = tui.SScrollUp
 						}
 						if me.S < 0 {
 							evt = tui.ScrollDown
-							if me.Mod {
+							if me.Mod() {
 								evt = tui.SScrollDown
 							}
 						}
@@ -5456,7 +5463,7 @@ func (t *Terminal) Loop() error {
 				}
 
 				// Preview dragging
-				if me.Down && (previewDraggingPos >= 0 || clicked && t.hasPreviewWindow() && t.pwindow.Enclose(my, mx)) {
+				if me.Down && (previewDraggingPos >= 0 || click && t.hasPreviewWindow() && t.pwindow.Enclose(my, mx)) {
 					if previewDraggingPos > 0 {
 						scrollPreviewBy(previewDraggingPos - my)
 					}
@@ -5466,7 +5473,7 @@ func (t *Terminal) Loop() error {
 
 				// Preview scrollbar dragging
 				headerLines := t.activePreviewOpts.headerLines
-				pbarDragging = me.Down && (pbarDragging || clicked && t.hasPreviewWindow() && my >= t.pwindow.Top()+headerLines && my < t.pwindow.Top()+t.pwindow.Height() && mx == t.pwindow.Left()+t.pwindow.Width())
+				pbarDragging = me.Down && (pbarDragging || click && t.hasPreviewWindow() && my >= t.pwindow.Top()+headerLines && my < t.pwindow.Top()+t.pwindow.Height() && mx == t.pwindow.Left()+t.pwindow.Width())
 				if pbarDragging {
 					effectiveHeight := t.pwindow.Height() - headerLines
 					numLines := len(t.previewer.lines) - headerLines
@@ -5483,7 +5490,7 @@ func (t *Terminal) Loop() error {
 				}
 
 				// Preview border dragging (resizing)
-				if pborderDragging < 0 && clicked && t.hasPreviewWindow() {
+				if pborderDragging < 0 && click && t.hasPreviewWindow() {
 					switch t.activePreviewOpts.position {
 					case posUp:
 						if t.pborder.Enclose(my, mx) && my == t.pborder.Top()+t.pborder.Height()-1 {
@@ -5564,9 +5571,7 @@ func (t *Terminal) Loop() error {
 				}
 
 				// Inside the header window
-				// TODO: Should we trigger this on mouse up instead?
-				//       Should we still trigger it when the position has changed from the down event?
-				if t.headerVisible && t.headerWindow != nil && t.headerWindow.Enclose(my, mx) {
+				if clicked && t.headerVisible && t.headerWindow != nil && t.headerWindow.Enclose(my, mx) {
 					mx -= t.headerWindow.Left() + t.headerIndent(t.headerBorderShape)
 					my -= t.headerWindow.Top()
 					if mx < 0 {
@@ -5580,7 +5585,7 @@ func (t *Terminal) Loop() error {
 					return doActions(actionsFor(tui.ClickHeader))
 				}
 
-				if t.headerVisible && t.headerLinesWindow != nil && t.headerLinesWindow.Enclose(my, mx) {
+				if clicked && t.headerVisible && t.headerLinesWindow != nil && t.headerLinesWindow.Enclose(my, mx) {
 					mx -= t.headerLinesWindow.Left() + t.headerIndent(t.headerLinesShape)
 					my -= t.headerLinesWindow.Top()
 					if mx < 0 {
@@ -5616,7 +5621,7 @@ func (t *Terminal) Loop() error {
 				}
 
 				// Scrollbar dragging
-				barDragging = me.Down && (barDragging || clicked && my >= min && mx == t.window.Width()-1)
+				barDragging = me.Down && (barDragging || click && my >= min && mx == t.window.Width()-1)
 				if barDragging {
 					barLength, barStart := t.getScrollbar()
 					if barLength > 0 {
@@ -5649,7 +5654,6 @@ func (t *Terminal) Loop() error {
 							return doActions(actionsFor(tui.DoubleClick))
 						}
 					}
-					break
 				}
 
 				if me.Down {
@@ -5661,40 +5665,40 @@ func (t *Terminal) Loop() error {
 						t.vset(cy)
 						req(reqList)
 						evt := tui.RightClick
-						if me.Mod {
+						if me.Mod() {
 							evt = tui.SRightClick
 						}
 						if me.Left {
 							evt = tui.LeftClick
-							if me.Mod {
+							if me.Mod() {
 								evt = tui.SLeftClick
 							}
 						}
 						return doActions(actionsFor(evt))
-					} else if t.headerVisible && t.headerWindow == nil {
-						// Header
-						// TODO: Should we trigger this on mouse up instead?
-						numLines := t.visibleHeaderLinesInList()
-						lineOffset := 0
-						if t.inputWindow == nil && !t.headerFirst {
-							// offset for info line
-							if t.noSeparatorLine() {
-								lineOffset = 1
-							} else {
-								lineOffset = 2
-							}
+					}
+				}
+				if clicked && t.headerVisible && t.headerWindow == nil {
+					// Header
+					numLines := t.visibleHeaderLinesInList()
+					lineOffset := 0
+					if t.inputWindow == nil && !t.headerFirst {
+						// offset for info line
+						if t.noSeparatorLine() {
+							lineOffset = 1
+						} else {
+							lineOffset = 2
 						}
-						my -= lineOffset
-						mx -= t.pointerLen + t.markerLen
-						if my >= 0 && my < numLines && mx >= 0 {
-							if t.layout == layoutReverse {
-								t.clickHeaderLine = my + 1
-							} else {
-								t.clickHeaderLine = numLines - my
-							}
-							t.clickHeaderColumn = mx + 1
-							return doActions(actionsFor(tui.ClickHeader))
+					}
+					my -= lineOffset
+					mx -= t.pointerLen + t.markerLen
+					if my >= 0 && my < numLines && mx >= 0 {
+						if t.layout == layoutReverse {
+							t.clickHeaderLine = my + 1
+						} else {
+							t.clickHeaderLine = numLines - my
 						}
+						t.clickHeaderColumn = mx + 1
+						return doActions(actionsFor(tui.ClickHeader))
 					}
 				}
 			case actReload, actReloadSync:
