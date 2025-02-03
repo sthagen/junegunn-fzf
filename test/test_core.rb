@@ -1616,7 +1616,7 @@ class TestCore < TestInteractive
       end
     end
 
-    tmux.send_keys %(seq 100 | #{FZF} --multi --reverse --preview-window up,noborder --preview 'env | grep ^FZF_ | sort' --no-input --bind enter:show-input+refresh-preview,space:disable-search+refresh-preview), :Enter
+    tmux.send_keys %(seq 100 | #{FZF} --multi --reverse --preview-window up,99%,noborder --preview 'env | grep ^FZF_ | sort' --no-input --bind enter:show-input+refresh-preview,space:disable-search+refresh-preview), :Enter
     expected = {
       FZF_TOTAL_COUNT: '100',
       FZF_MATCH_COUNT: '100',
@@ -1650,6 +1650,19 @@ class TestCore < TestInteractive
     tmux.until do |lines|
       expected.merge!(FZF_INPUT_STATE: 'disabled', FZF_ACTION: 'disable-search', FZF_KEY: 'space')
       assert_equal expected, to_vars(lines).slice(*expected.keys)
+    end
+  end
+
+  def test_abort_action_chain
+    tmux.send_keys %(seq 100 | #{FZF} --bind 'load:accept+up+up' > #{tempname}), :Enter
+    wait do
+      assert_path_exists tempname
+      assert_equal '1', File.read(tempname).chomp
+    end
+    tmux.send_keys %(seq 100 | #{FZF} --bind 'load:abort+become(echo {})' > #{tempname}), :Enter
+    wait do
+      assert_path_exists tempname
+      assert_equal '', File.read(tempname).chomp
     end
   end
 end
