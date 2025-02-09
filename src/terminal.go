@@ -305,6 +305,7 @@ type Terminal struct {
 	nthAttr            tui.Attr
 	nth                []Range
 	nthCurrent         []Range
+	acceptNth          []Range
 	tabstop            int
 	margin             [4]sizeSpec
 	padding            [4]sizeSpec
@@ -583,6 +584,8 @@ const (
 	actShowHeader
 	actHideHeader
 	actBell
+	actExclude
+	actExcludeMulti
 )
 
 func (a actionType) Name() string {
@@ -620,12 +623,14 @@ type placeholderFlags struct {
 }
 
 type searchRequest struct {
-	sort    bool
-	sync    bool
-	nth     *[]Range
-	command *commandSpec
-	environ []string
-	changed bool
+	sort     bool
+	sync     bool
+	nth      *[]Range
+	command  *commandSpec
+	environ  []string
+	changed  bool
+	denylist []int32
+	revision revision
 }
 
 type previewRequest struct {
@@ -914,6 +919,7 @@ func NewTerminal(opts *Options, eventBox *util.EventBox, executor *util.Executor
 		nthAttr:            opts.Theme.Nth.Attr,
 		nth:                opts.Nth,
 		nthCurrent:         opts.Nth,
+		acceptNth:          opts.AcceptNth,
 		tabstop:            opts.Tabstop,
 		hasStartActions:    false,
 		hasResultActions:   false,
@@ -1561,16 +1567,24 @@ func (t *Terminal) output() bool {
 	for _, s := range t.printQueue {
 		t.printer(s)
 	}
+	transform := func(item *Item) string {
+		return item.AsString(t.ansi)
+	}
+	if len(t.acceptNth) > 0 {
+		transform = func(item *Item) string {
+			return JoinTokens(StripLastDelimiter(Transform(Tokenize(item.AsString(t.ansi), t.delimiter), t.acceptNth), t.delimiter))
+		}
+	}
 	found := len(t.selected) > 0
 	if !found {
 		current := t.currentItem()
 		if current != nil {
-			t.printer(current.AsString(t.ansi))
+			t.printer(transform(current))
 			found = true
 		}
 	} else {
 		for _, sel := range t.sortSelected() {
-			t.printer(sel.item.AsString(t.ansi))
+			t.printer(transform(sel.item))
 		}
 	}
 	return found
@@ -3847,7 +3861,7 @@ func replacePlaceholder(params replacePlaceholderParams) (string, []string) {
 				elems, prefixLength := awkTokenizer(params.query)
 				tokens := withPrefixLengths(elems, prefixLength)
 				trans := Transform(tokens, nth)
-				result := joinTokens(trans)
+				result := JoinTokens(trans)
 				if !flags.preserveSpace {
 					result = strings.TrimSpace(result)
 				}
@@ -3897,7 +3911,7 @@ func replacePlaceholder(params replacePlaceholderParams) (string, []string) {
 			replace = func(item *Item) string {
 				tokens := Tokenize(item.AsString(params.stripAnsi), params.delimiter)
 				trans := Transform(tokens, ranges)
-				str := joinTokens(trans)
+				str := JoinTokens(trans)
 
 				// trim the last delimiter
 				if params.delimiter.str != nil {
@@ -4741,6 +4755,7 @@ func (t *Terminal) Loop() error {
 		changed := false
 		beof := false
 		queryChanged := false
+		denylist := []int32{}
 
 		// Special handling of --sync. Activate the interface on the second tick.
 		if loopIndex == 1 && t.deferActivation() {
@@ -4897,6 +4912,27 @@ func (t *Terminal) Loop() error {
 				}
 			case actBell:
 				t.tui.Bell()
+			case actExcludeMulti:
+				if len(t.selected) > 0 {
+					for _, item := range t.sortSelected() {
+						denylist = append(denylist, item.item.Index())
+					}
+					// Clear selected items
+					t.selected = make(map[int32]selectedItem)
+					t.version++
+				} else {
+					item := t.currentItem()
+					if item != nil {
+						denylist = append(denylist, item.Index())
+					}
+				}
+				changed = true
+			case actExclude:
+				if item := t.currentItem(); item != nil {
+					denylist = append(denylist, item.Index())
+					t.deselectItem(item)
+					changed = true
+				}
 			case actExecute, actExecuteSilent:
 				t.executeCommand(a.a, false, a.t == actExecuteSilent, false, false, "")
 			case actExecuteMulti:
@@ -6006,7 +6042,7 @@ func (t *Terminal) Loop() error {
 		reload := changed || newCommand != nil
 		var reloadRequest *searchRequest
 		if reload {
-			reloadRequest = &searchRequest{sort: t.sort, sync: reloadSync, nth: newNth, command: newCommand, environ: t.environ(), changed: changed}
+			reloadRequest = &searchRequest{sort: t.sort, sync: reloadSync, nth: newNth, command: newCommand, environ: t.environ(), changed: changed, denylist: denylist, revision: t.merger.Revision()}
 		}
 		t.mutex.Unlock() // Must be unlocked before touching reqBox
 
