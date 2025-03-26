@@ -1866,4 +1866,28 @@ class TestCore < TestInteractive
       assert_includes lines, '> 555'
     end
   end
+
+  def test_no_input_change_query
+    tmux.send_keys %(seq 1000 | #{FZF} --multi --query 999 --no-input --bind 'enter:show-input+change-query(555)+hide-input,space:change-query(555)+select'), :Enter
+    tmux.until { |lines| assert_includes lines, '> 999' }
+    tmux.send_keys :Space
+    tmux.until do |lines|
+      assert_includes lines, '>>999'
+      refute_includes lines, '> 555'
+    end
+    tmux.send_keys :Enter
+    tmux.until do |lines|
+      refute_includes lines, '>>999'
+      assert_includes lines, '> 555'
+    end
+  end
+
+  def test_search_override_query_in_no_input_mode
+    tmux.send_keys %(seq 1000 | #{FZF} --sync --no-input --bind 'enter:show-input+change-query(555)+hide-input+search(999),space:search(111)+show-input+change-query(777)'), :Enter
+    tmux.until { |lines| assert_includes lines, '> 1' }
+    tmux.send_keys :Enter
+    tmux.until { |lines| assert_includes lines, '> 999' }
+    tmux.send_keys :Space
+    tmux.until { |lines| assert_includes lines, '> 777' }
+  end
 end
