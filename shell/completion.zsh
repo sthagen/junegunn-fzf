@@ -272,8 +272,13 @@ if ! declare -f __fzf_list_hosts > /dev/null; then
         setopt GLOB NO_DOT_GLOB CASE_GLOB NO_NOMATCH NULL_GLOB
 
         __fzf_exec_awk '
-          tolower($1) ~ /^host(name)?$/ {
-            for (i = 2; i <= NF; i++)
+          # Note: mawk <= 1.3.3-20090705 does not support the POSIX brackets of
+          # the form [[:blank:]], and Ubuntu 18.04 LTS still uses this
+          # 16-year-old mawk unfortunately.  We need to use [ \t] instead.
+          match(tolower($0), /^[ \t]*host(name)?[ \t]*[ \t=]/) {
+            $0 = substr($0, RLENGTH + 1) # Remove "Host(name)?=?"
+            sub(/#.*/, "")
+            for (i = 1; i <= NF; i++)
               if ($i !~ /[*?%]/)
                 print $i
           }
@@ -281,9 +286,9 @@ if ! declare -f __fzf_list_hosts > /dev/null; then
       ) \
       <(
         __fzf_exec_awk -F ',' '
-          match($0, /^[[a-z0-9.,:-]+/) {
+          match($0, /^[][a-zA-Z0-9.,:-]+/) {
             $0 = substr($0, 1, RLENGTH)
-            gsub(/\[/, "")
+            gsub(/[][]|:[^,]*/, "")
             for (i = 1; i <= NF; i++)
               print $i
           }
@@ -291,14 +296,11 @@ if ! declare -f __fzf_list_hosts > /dev/null; then
       ) \
       <(
         __fzf_exec_awk '
-          # Note: mawk <= 1.3.3-20090705 does not support the POSIX brackets of
-          # the form [[:blank:]], and Ubuntu 18.04 LTS still uses this
-          # 16-year-old mawk unfortunately.  We need to use [ \t] instead.
-          /^[ \t]*(#|$)|0\.0\.0\.0/ { next }
           {
             sub(/#.*/, "")
             for (i = 2; i <= NF; i++)
-              print $i
+              if ($i != "0.0.0.0")
+                print $i
           }
         ' /etc/hosts 2> /dev/null
       )
