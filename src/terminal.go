@@ -9,6 +9,7 @@ import (
 	"math"
 	"net"
 	"os"
+	"os/exec"
 	"os/signal"
 	"regexp"
 	"sort"
@@ -230,6 +231,16 @@ type Status struct {
 	Selected   []StatusItem `json:"selected"`
 }
 
+type versionedCallback struct {
+	version  int64
+	callback func()
+}
+
+type runningCmd struct {
+	cmd       *exec.Cmd
+	tempFiles []string
+}
+
 // Terminal represents terminal input/output
 type Terminal struct {
 	initDelay          time.Duration
@@ -371,6 +382,8 @@ type Terminal struct {
 	selected           map[int32]selectedItem
 	version            int64
 	revision           revision
+	bgVersion          int64
+	runningCmds        *util.ConcurrentSet[*runningCmd]
 	reqBox             *util.EventBox
 	initialPreviewOpts previewOpts
 	previewOpts        previewOpts
@@ -388,8 +401,8 @@ type Terminal struct {
 	startChan          chan fitpad
 	killChan           chan bool
 	serverInputChan    chan []*action
-	callbackChan       chan func()
-	bgQueue            map[action][]func()
+	callbackChan       chan versionedCallback
+	bgQueue            map[action][]func(bool)
 	bgSemaphore        chan struct{}
 	bgSemaphores       map[action]chan struct{}
 	keyChan            chan tui.Event
@@ -600,6 +613,8 @@ const (
 	actBgTransformPrompt
 	actBgTransformQuery
 	actBgTransformSearch
+
+	actBgCancel
 
 	actSearch
 	actPreview
@@ -1022,6 +1037,7 @@ func NewTerminal(opts *Options, eventBox *util.EventBox, executor *util.Executor
 		proxyScript:        opts.ProxyScript,
 		merger:             EmptyMerger(revision{}),
 		selected:           make(map[int32]selectedItem),
+		runningCmds:        util.NewConcurrentSet[*runningCmd](),
 		reqBox:             util.NewEventBox(),
 		initialPreviewOpts: opts.Preview,
 		previewOpts:        opts.Preview,
@@ -1038,8 +1054,8 @@ func NewTerminal(opts *Options, eventBox *util.EventBox, executor *util.Executor
 		startChan:          make(chan fitpad, 1),
 		killChan:           make(chan bool),
 		serverInputChan:    make(chan []*action, 100),
-		callbackChan:       make(chan func(), maxBgProcesses),
-		bgQueue:            make(map[action][]func()),
+		callbackChan:       make(chan versionedCallback, maxBgProcesses),
+		bgQueue:            make(map[action][]func(bool)),
 		bgSemaphore:        make(chan struct{}, maxBgProcesses),
 		bgSemaphores:       make(map[action]chan struct{}),
 		keyChan:            make(chan tui.Event),
@@ -4360,30 +4376,35 @@ func (t *Terminal) captureLines(template string) string {
 func (t *Terminal) captureAsync(a action, firstLineOnly bool, callback func(string)) {
 	_, list := t.buildPlusList(a.a, false)
 	command, tempFiles := t.replacePlaceholder(a.a, false, string(t.input), list)
-	item := func() {
-		cmd := t.executor.ExecCommand(command, false)
-		cmd.Env = t.environ()
-
-		out, _ := cmd.StdoutPipe()
-		reader := bufio.NewReader(out)
-		var output string
-		if err := cmd.Start(); err == nil {
-			if firstLineOnly {
-				output, _ = reader.ReadString('\n')
-				output = strings.TrimRight(output, "\r\n")
-			} else {
-				bytes, _ := io.ReadAll(reader)
-				output = string(bytes)
+	version := t.bgVersion
+	cmd := t.executor.ExecCommand(command, true)
+	cmd.Env = t.environ()
+	item := func(proceed bool) {
+		if proceed {
+			out, _ := cmd.StdoutPipe()
+			reader := bufio.NewReader(out)
+			var output string
+			if err := cmd.Start(); err == nil {
+				runningCmd := runningCmd{cmd, tempFiles}
+				t.runningCmds.Add(&runningCmd)
+				if firstLineOnly {
+					output, _ = reader.ReadString('\n')
+					output = strings.TrimRight(output, "\r\n")
+				} else {
+					bytes, _ := io.ReadAll(reader)
+					output = string(bytes)
+				}
+				cmd.Wait()
+				t.runningCmds.Remove(&runningCmd)
 			}
-			cmd.Wait()
+			t.callbackChan <- versionedCallback{version, func() { callback(output) }}
 		}
 		removeFiles(tempFiles)
 
-		t.callbackChan <- func() { callback(output) }
 	}
 	queue, prs := t.bgQueue[a]
 	if !prs {
-		queue = []func(){}
+		queue = []func(bool){}
 	}
 	queue = append(queue, item)
 	t.bgQueue[a] = queue
@@ -4408,6 +4429,9 @@ Loop:
 			case semaphore <- struct{}{}:
 			default:
 				// Failed to acquire local semaphore, putting only the last one back to the queue
+				for _, item := range queue[:len(queue)-1] {
+					item(false)
+				}
 				t.bgQueue[a] = queue[len(queue)-1:]
 				continue Loop
 			}
@@ -4416,7 +4440,7 @@ Loop:
 				// Acquire global semaphore
 				t.bgSemaphore <- struct{}{}
 
-				todo()
+				todo(true)
 				// Release local semaphore
 				<-semaphore
 				// Release global semaphore
@@ -5040,6 +5064,10 @@ func (t *Terminal) Loop() error {
 			if code <= ExitNoMatch && t.history != nil {
 				t.history.append(string(t.input))
 			}
+			t.runningCmds.ForEach(func(cmd *runningCmd) {
+				util.KillCommand(cmd.cmd)
+				removeFiles(cmd.tempFiles)
+			})
 			running = false
 			t.mutex.Unlock()
 		}
@@ -5283,7 +5311,7 @@ func (t *Terminal) Loop() error {
 
 		var event tui.Event
 		actions := []*action{}
-		callbacks := []func(){}
+		callbacks := []versionedCallback{}
 		select {
 		case event = <-t.keyChan:
 			needBarrier = true
@@ -5438,7 +5466,9 @@ func (t *Terminal) Loop() error {
 			case actIgnore, actStart, actClick:
 			case actAsync:
 				for _, callback := range callbacks {
-					callback()
+					if t.bgVersion == callback.version {
+						callback.callback()
+					}
 				}
 			case actBecome:
 				valid, list := t.buildPlusList(a.a, false)
@@ -5695,6 +5725,11 @@ func (t *Terminal) Loop() error {
 						// NOTE: We're not properly passing the return value here
 						doActions(actions)
 					}
+				})
+			case actBgCancel:
+				t.bgVersion++
+				t.runningCmds.ForEach(func(cmd *runningCmd) {
+					util.KillCommand(cmd.cmd)
 				})
 			case actChangePrompt:
 				t.promptString = a.a
