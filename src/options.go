@@ -104,6 +104,8 @@ Usage: fzf [options]
     --gap[=N]                Render empty lines between each item
     --gap-line[=STR]         Draw horizontal line on each gap using the string
                              (default: '┈' or '-')
+    --freeze-left=N          Number of fields to freeze on the left
+    --freeze-right=N         Number of fields to freeze on the right
     --keep-right             Keep the right end of the line visible on overflow
     --scroll-off=LINES       Number of screen lines to keep above or below when
                              scrolling to the top or to the bottom (default: 0)
@@ -562,6 +564,8 @@ type Options struct {
 	Case              Case
 	Normalize         bool
 	Nth               []Range
+	FreezeLeft        int
+	FreezeRight       int
 	WithNth           func(Delimiter) func([]Token, int32) string
 	AcceptNth         func(Delimiter) func([]Token, int32) string
 	Delimiter         Delimiter
@@ -2695,6 +2699,14 @@ func parseOptions(index *int, opts *Options, allArgs []string) error {
 			if opts.Nth, err = splitNth(str); err != nil {
 				return err
 			}
+		case "--freeze-left":
+			if opts.FreezeLeft, err = nextInt("number of fields required"); err != nil {
+				return err
+			}
+		case "--freeze-right":
+			if opts.FreezeRight, err = nextInt("number of fields required"); err != nil {
+				return err
+			}
 		case "--with-nth":
 			str, err := nextString("nth expression required")
 			if err != nil {
@@ -3336,6 +3348,10 @@ func parseOptions(index *int, opts *Options, allArgs []string) error {
 
 	if len(opts.JumpLabels) == 0 {
 		return errors.New("empty jump labels")
+	}
+
+	if opts.FreezeLeft < 0 || opts.FreezeRight < 0 {
+		return errors.New("number of fields to freeze must be a non-negative integer")
 	}
 
 	if validateJumpLabels {
