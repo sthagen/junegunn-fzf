@@ -2490,6 +2490,8 @@ func (t *Terminal) resizeWindows(forcePreview bool, redrawBorder bool) {
 		if shape.HasRight() {
 			width++
 		}
+		// Make sure that the width does not exceed the list width
+		width = util.Min(t.window.Width()+t.headerIndentImpl(0, shape), width)
 		height := b.Height() - borderLines(shape)
 		return t.tui.NewWindow(top, left, width, height, windowType, noBorder, true)
 	}
@@ -3107,7 +3109,11 @@ func (t *Terminal) printFooter() {
 }
 
 func (t *Terminal) headerIndent(borderShape tui.BorderShape) int {
-	indentSize := t.pointerLen + t.markerLen
+	return t.headerIndentImpl(t.pointerLen+t.markerLen, borderShape)
+}
+
+func (t *Terminal) headerIndentImpl(base int, borderShape tui.BorderShape) int {
+	indentSize := base
 	if t.listBorderShape.HasLeft() {
 		indentSize += 1 + t.borderWidth
 	}
@@ -3546,8 +3552,9 @@ func (t *Terminal) printHighlighted(result Result, colBase tui.ColorPair, colMat
 		if t.freezeLeft > 0 || t.freezeRight > 0 {
 			tokens = Tokenize(item.text.ToString(), t.delimiter)
 		}
-		// 0 1 2| 3 |4 5
-		// ----->   <---
+
+		// 0 | 1 | 2 | 3 | 4 | 5
+		// ------>       <------
 		if t.freezeLeft > 0 {
 			if len(tokens) > 0 {
 				token := tokens[util.Min(t.freezeLeft, len(tokens))-1]
@@ -3560,7 +3567,8 @@ func (t *Terminal) printHighlighted(result Result, colBase tui.ColorPair, colMat
 				splitOffset2 = 0
 			} else if index >= t.freezeLeft {
 				token := tokens[index]
-				splitOffset2 = int(token.prefixLength) + token.text.Length()
+				delimiter := strings.TrimLeftFunc(GetLastDelimiter(token.text.ToString(), t.delimiter), unicode.IsSpace)
+				splitOffset2 = int(token.prefixLength) + token.text.Length() - len([]rune(delimiter))
 			}
 			splitOffset2 = util.Max(splitOffset2, splitOffset1)
 		}
@@ -3743,9 +3751,14 @@ func (t *Terminal) printHighlighted(result Result, colBase tui.ColorPair, colMat
 				offs[idx].offset[1] -= int32(shift)
 			}
 			maxe -= shift
-			displayWidth = t.displayWidthWithLimit(runes, 0, maxWidth)
-			if !t.wrap && displayWidth > maxWidth {
-				ellipsis, ellipsisWidth := util.Truncate(t.ellipsis, maxWidth/2)
+			ellipsis, ellipsisWidth := util.Truncate(t.ellipsis, maxWidth)
+			adjustedMaxWidth := maxWidth
+			if fidx < 2 {
+				// For frozen parts, reserve space for the ellipsis in the middle part
+				adjustedMaxWidth -= ellipsisWidth
+			}
+			displayWidth = t.displayWidthWithLimit(runes, 0, adjustedMaxWidth)
+			if !t.wrap && displayWidth > adjustedMaxWidth {
 				maxe = util.Constrain(maxe+util.Min(maxWidth/2-ellipsisWidth, t.hscrollOff), 0, len(runes))
 				transformOffsets := func(diff int32, rightTrim bool) {
 					for idx, offset := range offs {
