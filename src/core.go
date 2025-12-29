@@ -159,7 +159,7 @@ func Run(opts *Options) (int, error) {
 			if item.colors != nil {
 				for _, ansi := range *item.colors {
 					if ansi.color.bg >= 0 {
-						maxColorOffset = util.Max32(maxColorOffset, ansi.offset[1])
+						maxColorOffset = max(maxColorOffset, ansi.offset[1])
 					}
 				}
 			}
@@ -333,7 +333,7 @@ func Run(opts *Options) (int, error) {
 			if total >= maxFit || final {
 				deferred = false
 				heightUnknown = false
-				terminal.startChan <- fitpad{util.Min(total, maxFit), padHeight}
+				terminal.startChan <- fitpad{min(total, maxFit), padHeight}
 			}
 		} else if deferred {
 			deferred = false
@@ -530,7 +530,7 @@ func Run(opts *Options) (int, error) {
 			break
 		}
 		if delay && reading {
-			dur := util.DurWithin(
+			dur := util.Constrain(
 				time.Duration(ticks-startTick)*coordinatorDelayStep,
 				0, coordinatorDelayMax)
 			time.Sleep(dur)
