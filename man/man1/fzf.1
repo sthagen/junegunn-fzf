@@ -1,7 +1,7 @@
 .ig
 The MIT License (MIT)
 
-Copyright (c) 2013-2025 Junegunn Choi
+Copyright (c) 2013-2026 Junegunn Choi
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -593,8 +593,11 @@ Highlight the whole current line
 .B "\-\-cycle"
 Enable cyclic scroll
 .TP
-.B "\-\-wrap"
-Enable line wrap
+.BI "\-\-wrap" "[=MODE]"
+Enable line wrap. \fIMODE\fR can be \fBchar\fR (default) or \fBword\fR.
+\fBword\fR mode wraps lines at word boundaries (spaces and tabs) instead of
+at arbitrary character positions. \fB\-\-wrap\-word\fR is a synonym for
+\fB\-\-wrap=word\fR.
 .TP
 .BI "\-\-wrap\-sign" "=INDICATOR"
 Indicator for wrapped lines. The default is '↳ ' or '> ' depending on
@@ -926,7 +929,7 @@ default value 0 (or \fBcenter\fR) will put the label at the center of the
 border line.
 
 .TP
-.BI "\-\-preview\-window=" "[POSITION][,SIZE[%]][,border\-STYLE][,[no]wrap][,[no]follow][,[no]cycle][,[no]info][,[no]hidden][,+SCROLL[OFFSETS][/DENOM]][,~HEADER_LINES][,default][,<SIZE_THRESHOLD(ALTERNATIVE_LAYOUT)]"
+.BI "\-\-preview\-window=" "[POSITION][,SIZE[%]][,border\-STYLE][,[no]wrap][,wrap\-word][,[no]follow][,[no]cycle][,[no]info][,[no]hidden][,+SCROLL[OFFSETS][/DENOM]][,~HEADER_LINES][,default][,<SIZE_THRESHOLD(ALTERNATIVE_LAYOUT)]"
 
 .RS
 .B POSITION: (default: right)
@@ -944,7 +947,8 @@ default until \fBtoggle\-preview\fR action is triggered.
 execute the command in the background.
 
 * Long lines are truncated by default. Line wrap can be enabled with
-\fBwrap\fR flag.
+\fBwrap\fR flag. \fBwrap\-word\fR flag enables word-level wrapping, which
+breaks lines at word boundaries instead of mid-word.
 
 * Preview window will automatically scroll to the bottom when \fBfollow\fR
 flag is set, similarly to how \fBtail \-f\fR works.
@@ -1961,12 +1965,14 @@ A key or an event can be bound to one or more of the following actions.
     \fBtoggle\-multi\-line\fR
     \fBtoggle\-preview\fR
     \fBtoggle\-preview\-wrap\fR
+    \fBtoggle\-preview\-wrap\-word\fR
     \fBtoggle\-raw\fR                   (toggle raw mode for displaying non-matching items)
     \fBtoggle\-search\fR                (toggle search functionality)
     \fBtoggle\-sort\fR
     \fBtoggle\-track\fR                 (toggle global tracking option (\fB\-\-track\fR))
     \fBtoggle\-track\-current\fR         (toggle tracking of the current item)
-    \fBtoggle\-wrap\fR                  \fIctrl\-/\fR  \fIalt\-/\fR
+    \fBtoggle\-wrap\fR
+    \fBtoggle\-wrap\-word\fR             \fIctrl\-/\fR  \fIalt\-/\fR
     \fBtoggle+down\fR                  \fIctrl\-i  (tab)\fR
     \fBtoggle+up\fR                    \fIbtab    (shift\-tab)\fR
     \fBtrack\-current\fR                (track the current item; automatically disabled if focus changes)
