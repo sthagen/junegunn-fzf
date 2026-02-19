@@ -920,6 +920,11 @@ Should be used with one of the following \fB\-\-preview\-window\fR options.
 .br
 
 .TP
+.BI "\-\-preview\-wrap\-sign" =INDICATOR
+Indicator for wrapped lines in the preview window. If not set, the value of
+\fB\-\-wrap\-sign\fR is used.
+
+.TP
 .BI "\-\-preview\-label\-pos" [=N[:top|bottom]]
 Position of the border label on the border line of the preview window. Specify
 a positive integer as the column position from the left. Specify a negative
@@ -1384,6 +1389,8 @@ fzf exports the following environment variables to its child processes.
 .BR FZF_SELECT_COUNT "    Number of selected items"
 .br
 .BR FZF_POS "             Vertical position of the cursor in the list starting from 1"
+.br
+.BR FZF_WRAP "            The line wrapping mode (char, word) when enabled"
 .br
 .BR FZF_QUERY "           Current query string"
 .br
