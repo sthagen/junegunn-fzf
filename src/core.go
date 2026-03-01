@@ -113,6 +113,42 @@ func Run(opts *Options) (int, error) {
 	cache := NewChunkCache()
 	var chunkList *ChunkList
 	var itemIndex int32
+	// transformItem applies with-nth transformation to an item's raw data.
+	// It handles ANSI token propagation using prevLineAnsiState for cross-line continuity.
+	transformItem := func(item *Item, data []byte, transformer func([]Token, int32) string, index int32) {
+		tokens := Tokenize(byteString(data), opts.Delimiter)
+		if opts.Ansi && len(tokens) > 1 {
+			var ansiState *ansiState
+			if prevLineAnsiState != nil {
+				ansiStateDup := *prevLineAnsiState
+				ansiState = &ansiStateDup
+			}
+			for _, token := range tokens {
+				prevAnsiState := ansiState
+				_, _, ansiState = extractColor(token.text.ToString(), ansiState, nil)
+				if prevAnsiState != nil {
+					token.text.Prepend("\x1b[m" + prevAnsiState.ToString())
+				} else {
+					token.text.Prepend("\x1b[m")
+				}
+			}
+		}
+		transformed := transformer(tokens, index)
+		item.text, item.colors = ansiProcessor(stringBytes(transformed))
+
+		// We should not trim trailing whitespaces with background colors
+		var maxColorOffset int32
+		if item.colors != nil {
+			for _, ansi := range *item.colors {
+				if ansi.color.bg >= 0 {
+					maxColorOffset = max(maxColorOffset, ansi.offset[1])
+				}
+			}
+		}
+		item.text.TrimTrailingWhitespaces(int(maxColorOffset))
+	}
+
+	var nthTransformer func([]Token, int32) string
 	if opts.WithNth == nil {
 		chunkList = NewChunkList(cache, func(item *Item, data []byte) bool {
 			item.text, item.colors = ansiProcessor(data)
@@ -121,38 +157,13 @@ func Run(opts *Options) (int, error) {
 			return true
 		})
 	} else {
-		nthTransformer := opts.WithNth(opts.Delimiter)
+		nthTransformer = opts.WithNth(opts.Delimiter)
 		chunkList = NewChunkList(cache, func(item *Item, data []byte) bool {
-			tokens := Tokenize(byteString(data), opts.Delimiter)
-			if opts.Ansi && len(tokens) > 1 {
-				var ansiState *ansiState
-				if prevLineAnsiState != nil {
-					ansiStateDup := *prevLineAnsiState
-					ansiState = &ansiStateDup
-				}
-				for _, token := range tokens {
-					prevAnsiState := ansiState
-					_, _, ansiState = extractColor(token.text.ToString(), ansiState, nil)
-					if prevAnsiState != nil {
-						token.text.Prepend("\x1b[m" + prevAnsiState.ToString())
-					} else {
-						token.text.Prepend("\x1b[m")
-					}
-				}
+			if nthTransformer == nil {
+				item.text, item.colors = ansiProcessor(data)
+			} else {
+				transformItem(item, data, nthTransformer, itemIndex)
 			}
-			transformed := nthTransformer(tokens, itemIndex)
-			item.text, item.colors = ansiProcessor(stringBytes(transformed))
-
-			// We should not trim trailing whitespaces with background colors
-			var maxColorOffset int32
-			if item.colors != nil {
-				for _, ansi := range *item.colors {
-					if ansi.color.bg >= 0 {
-						maxColorOffset = max(maxColorOffset, ansi.offset[1])
-					}
-				}
-			}
-			item.text.TrimTrailingWhitespaces(int(maxColorOffset))
 			item.text.Index = itemIndex
 			item.origText = &data
 			itemIndex++
@@ -260,7 +271,7 @@ func Run(opts *Options) (int, error) {
 							return false
 						}
 						mutex.Lock()
-						if result, _, _ := pattern.MatchItem(&item, false, slab); result != nil {
+						if result, _, _ := pattern.MatchItem(&item, false, slab); result.item != nil {
 							opts.Printer(transformer(&item))
 							found = true
 						}
@@ -278,15 +289,18 @@ func Run(opts *Options) (int, error) {
 
 			if opts.Bench > 0 {
 				// Benchmark mode: repeat scan for the given duration
+				totalItems := CountItems(snapshot)
+				var matchCount int
 				var times []time.Duration
 				deadline := time.Now().Add(opts.Bench)
 				for time.Now().Before(deadline) {
 					cache.Clear()
 					start := time.Now()
-					matcher.scan(MatchRequest{
+					result := matcher.scan(MatchRequest{
 						chunks:  snapshot,
 						pattern: pattern})
 					times = append(times, time.Since(start))
+					matchCount = result.merger.Length()
 				}
 				// Print stats
 				var total time.Duration
@@ -301,8 +315,14 @@ func Run(opts *Options) (int, error) {
 					}
 				}
 				avg := total / time.Duration(len(times))
-				fmt.Printf("  %d iterations  avg: %v  min: %v  max: %v  total: %v\n",
-					len(times), avg, minD, maxD, total)
+				selectivity := float64(matchCount) / float64(totalItems) * 100
+				fmt.Printf("  %d iterations  avg: %.2fms  min: %.2fms  max: %.2fms  total: %.2fs  items: %d  matches: %d (%.2f%%)\n",
+					len(times),
+					float64(avg.Microseconds())/1000,
+					float64(minD.Microseconds())/1000,
+					float64(maxD.Microseconds())/1000,
+					total.Seconds(),
+					totalItems, matchCount, selectivity)
 				return ExitOk, nil
 			}
 
@@ -452,6 +472,7 @@ func Run(opts *Options) (int, error) {
 					var environ []string
 					var changed bool
 					headerLinesChanged := false
+					withNthChanged := false
 					switch val := value.(type) {
 					case searchRequest:
 						sort = val.sort
@@ -476,6 +497,34 @@ func Run(opts *Options) (int, error) {
 							headerLines = int32(*val.headerLines)
 							headerUpdated = false
 							headerLinesChanged = true
+							bump = true
+						}
+						if val.withNth != nil {
+							newTransformer := val.withNth.fn
+							// Cancel any in-flight scan and block the terminal from reading
+							// items before mutating them in-place. Snapshot shares middle
+							// chunk pointers, so the matcher and terminal can race with us.
+							matcher.CancelScan()
+							terminal.PauseRendering()
+							// Reset cross-line ANSI state before re-processing all items
+							lineAnsiState = nil
+							prevLineAnsiState = nil
+							chunkList.ForEachItem(func(item *Item) {
+								origBytes := *item.origText
+								savedIndex := item.Index()
+								if newTransformer != nil {
+									transformItem(item, origBytes, newTransformer, savedIndex)
+								} else {
+									item.text, item.colors = ansiProcessor(origBytes)
+								}
+								item.text.Index = savedIndex
+								item.transformed = nil
+							}, func() {
+								nthTransformer = newTransformer
+							})
+							terminal.ResumeRendering()
+							matcher.ResumeScan()
+							withNthChanged = true
 							bump = true
 						}
 						if bump {
@@ -521,6 +570,8 @@ func Run(opts *Options) (int, error) {
 						} else {
 							terminal.UpdateHeader(nil)
 						}
+					} else if withNthChanged && headerLines > 0 {
+						terminal.UpdateHeader(GetItems(snapshot, int(headerLines)))
 					}
 					matcher.Reset(snapshot, input(), true, !reading, sort, snapshotRevision)
 					delay = false
