@@ -1,8 +1,18 @@
 CHANGELOG
 =========
 
-0.70.1
+0.71.0
 ------
+- Cross-reload item identity with `--id-nth`
+    - Added `--id-nth=NTH` to define item identity fields for cross-reload operations
+    - When a `reload` is triggered with tracking enabled, fzf searches for the tracked item by its identity fields in the new list.
+        - `--track --id-nth ..` tracks by the entire line
+        - `--track --id-nth 1` tracks by the first field
+        - `--track` without `--id-nth` retains the existing index-based tracking behavior
+        - The UI is temporarily blocked (prompt dimmed, input disabled) until the item is found or loading completes.
+            - Press `Escape` or `Ctrl-C` to cancel the blocked state without quitting
+            - Info line shows `+T*` / `+t*` while searching
+    - With `--multi`, selected items are preserved across `reload-sync` by matching their identity fields
 - Performance improvements
     - The search performance now scales linearly with the number of CPU cores, as we dropped static partitioning to allow better load balancing across threads.
       ```
