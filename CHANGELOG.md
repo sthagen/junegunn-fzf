@@ -1,6 +1,41 @@
 CHANGELOG
 =========
 
+0.74.2
+------
+- Single-character queries are up to 2.4x faster
+    - This is the most latency-sensitive case; the first keystroke scans the entire list before the result cache can help
+- Faster sorting of search results; the default two-criteria ranking skips redundant radix passes
+- Fixed nondeterministic match highlight positions
+- fzf now detects terminal resize on Windows in `--height` mode (#4790) (@Cyrus580529)
+- Fixed signal handler cleanup when fzf is used as a library; SIGINT/SIGTERM/SIGHUP and resize handlers no longer persist after `Run()` returns
+- fish: fixed history command being affected by user initialization scripts, and improved timestamp colors in CTRL-R (#4862) (@bitraid)
+
+0.74.1
+------
+- The default separator on the info line is no longer shown when the input section is already visually separated from the list section by a border line
+  ```sh
+  # No separator shown below the header border
+  fzf --style full --input-border none --header foo
+
+  # Separator shown; no border separates the input section from the list section
+  fzf --style full --input-border none --header foo --no-header-border
+
+  # No separator below the border of the preview window at 'next' position
+  fzf --preview : --preview-window next
+
+  # Conversely, separator is now shown when the input border does not draw
+  # a line facing the list section
+  fzf --input-border bottom
+  ```
+- Rendering improvements
+    - Each frame is now wrapped in synchronized update mode (mode 2026) to reduce flickering on supported terminals
+    - Reduced rendering output by 10-23% by skipping redundant SGR sequences
+    - Fixed ghost characters and misplaced colors inside Zellij by using CHA instead of CR + CUF for horizontal cursor movement (#4858, zellij-org/zellij#5370)
+    - Fixed cursor restoration on exit with `--height --no-clear` inside Neovim terminal by using DECSC/DECRC instead of `CSI s`/`CSI u`
+- nushell: fixed deprecation error of `str downcase` on nushell 0.114.0 or above (#4857) (@sim590)
+- Each release now includes `.deb` packages for easy installation on Debian-based distros (#4859)
+
 0.74.0
 ------
 _Release highlights: https://junegunn.github.io/fzf/releases/0.74.0/_
