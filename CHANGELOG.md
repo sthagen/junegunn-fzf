@@ -1,14 +1,27 @@
 CHANGELOG
 =========
 
+0.74.4
+------
+- Fixed an escape sequence split across reads being parsed as a fragment, which leaked the rest into the query (#4899)
+    - e.g. A terminal answering the startup `DECRQM` query late left `?2004;2$y`, CTRL-UP left `5A`, and SGR mouse input left `0;1;1M`
+- Fixed `--tiebreak=pathname` not detecting the last path separator when the line contains a non-ASCII character before it (#4902)
+- Vim plugin
+    - fzf no longer blocks the editor, so live previews keep working while fzf is open
+        - `fzf#run` returns an empty list when it runs fzf asynchronously. Use `sink`, `sinklist`, or `exit` to get the result
+    - The popup layout now works under Zellij
+    - Added `popup` as a synonym of the `tmux` layout key
+      ```vim
+      let g:fzf_layout = { 'popup': '90%,70%' }
+      ```
+
 0.74.3
 ------
 - Performance optimizations for non-ASCII input
-    - A line holding any non-ASCII character is kept as a rune array, and the prefilter did not run on those lines, so every item went through the full score matrix
-    - Queries are up to 16x faster, the gain growing with how much of the line is non-ASCII
+    - ASCII queries are up to 16x faster
     - Non-ASCII queries are up to 12x faster
-    - Reading non-ASCII input is up to 37% faster and uses up to 29% less memory, the gain depending on how early the first non-ASCII character appears in the line
-    - Accented Latin and fullwidth forms get the faster reading but not the faster queries, because those characters can still match their ASCII counterparts
+    - Reading accented Latin input is up to 37% faster
+    - Reading CJK input reduces memory use by up to 29%
     - ASCII input is unaffected
 - Fixed an image from a preview command being torn apart when its rows are separated by IND instead of newlines, as `chafa` does under tmux (#4885)
 - Fixed `replace-query` corrupting the item text when the query is edited afterwards

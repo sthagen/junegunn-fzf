@@ -29,6 +29,9 @@ func replacePlaceholderTest(template string, stripAnsi bool, delimiter Delimiter
 }
 
 func TestReplacePlaceholder(t *testing.T) {
+	// Pin $SHELL so the quoting style doesn't depend on the test runner's shell
+	t.Setenv("SHELL", "cmd")
+
 	item1 := newItem("  foo'bar \x1b[31mbaz\x1b[m")
 	items1 := [3][]*Item{{item1}, {item1}, nil}
 	items2 := [3][]*Item{
@@ -223,7 +226,7 @@ func TestReplacePlaceholder(t *testing.T) {
 	// while the double q is invalid, it is useful here for testing purposes
 	templateToOutput[`{q}`] = "{{.O}}" + query + "{{.O}}"
 	templateToOutput[`{fzf:query}`] = "{{.O}}" + query + "{{.O}}"
-	templateToOutput[`{fzf:action} {fzf:prompt}`] = "backward-delete-char-eof 'prompt'"
+	templateToOutput[`{fzf:action} {fzf:prompt}`] = `backward-delete-char-eof {{.O}}prompt{{.O}}`
 
 	// IV. escaping placeholder
 	templateToOutput[`\{}`] = `{}`
@@ -251,10 +254,13 @@ func TestReplacePlaceholder(t *testing.T) {
 }
 
 func TestQuoteEntry(t *testing.T) {
-	type quotes struct{ E, O, SQ, DQ, BS string } // standalone escape, outer, single and double quotes, backslash
-	unixStyle := quotes{``, `'`, `'\''`, `"`, `\`}
-	windowsStyle := quotes{`^`, `^"`, `'`, `\^"`, `\\`}
+	type quotes struct{ E, O, SQ, DQ, BS, PB string } // standalone escape, outer, single and double quotes, doubled and plain backslash
+	unixStyle := quotes{``, `'`, `'\''`, `"`, `\`, `\`}
+	windowsStyle := quotes{`^`, `^"`, `'`, `\^"`, `\\`, `\`}
 	var effectiveStyle quotes
+
+	// Pin $SHELL so the quoting style doesn't depend on the test runner's shell
+	t.Setenv("SHELL", "cmd")
 	exec := util.NewExecutor("")
 
 	if util.IsWindows() {
@@ -280,13 +286,13 @@ func TestQuoteEntry(t *testing.T) {
 		`>`:                       `{{.O}}{{.E}}>{{.O}}`,
 		`(`:                       `{{.O}}{{.E}}({{.O}}`,
 		`)`:                       `{{.O}}{{.E}}){{.O}}`,
-		`@`:                       `{{.O}}{{.E}}@{{.O}}`,
+		`@`:                       `{{.O}}@{{.O}}`,
 		`^`:                       `{{.O}}{{.E}}^{{.O}}`,
 		`%`:                       `{{.O}}{{.E}}%{{.O}}`,
 		`!`:                       `{{.O}}{{.E}}!{{.O}}`,
 		`%USERPROFILE%`:           `{{.O}}{{.E}}%USERPROFILE{{.E}}%{{.O}}`,
-		`C:\Program Files (x86)\`: `{{.O}}C:{{.BS}}Program Files {{.E}}(x86{{.E}}){{.BS}}{{.O}}`,
-		`"C:\Program Files"`:      `{{.O}}{{.DQ}}C:{{.BS}}Program Files{{.DQ}}{{.O}}`,
+		`C:\Program Files (x86)\`: `{{.O}}C:{{.PB}}Program Files {{.E}}(x86{{.E}}){{.BS}}{{.O}}`,
+		`"C:\Program Files"`:      `{{.O}}{{.DQ}}C:{{.PB}}Program Files{{.DQ}}{{.O}}`,
 	}
 
 	for input, expected := range tests {
@@ -440,7 +446,7 @@ func TestPowershellCommands(t *testing.T) {
 		// to explorer, which will prompt user to pick editing program for the fzf-preview file
 		// the temp file contains: `cat "C:\test.txt"`
 		// TODO this should actually work
-		{give{`powershell -NoProfile -Command {f}`, ``, newItems(`cat "C:\test.txt"`)}, want{match: `^powershell -NoProfile -Command .*\fzf-preview-[0-9]{9}$`}},
+		{give{`powershell -NoProfile -Command {f}`, ``, newItems(`cat "C:\test.txt"`)}, want{match: `^powershell -NoProfile -Command .*\fzf-temp-[0-9]+$`}},
 	}
 
 	// to force powershell-style escaping we temporarily set environment variable that fzf honors
