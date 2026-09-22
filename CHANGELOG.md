@@ -1,6 +1,10 @@
 CHANGELOG
 =========
 
+0.74.5
+------
+- Fixed `--gap-line` cutting a grapheme cluster when filling the last cells of the line (#4920)
+
 0.74.4
 ------
 - Fixed an escape sequence split across reads being parsed as a fragment, which leaked the rest into the query (#4899)
