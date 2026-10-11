@@ -21,7 +21,7 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 ..
-.TH fzf 1 "Sep 2026" "fzf 0.74.4" "fzf - a command-line fuzzy finder"
+.TH fzf 1 "Oct 2026" "fzf 0.74.5" "fzf - a command-line fuzzy finder"
 
 .SH NAME
 fzf - a command-line fuzzy finder
@@ -1909,7 +1909,10 @@ e.g.
 \fIfocus\fR
 .RS
 Triggered when the focus changes due to a vertical cursor movement or a search
-result update.
+result update. After a reload, the focused item is considered new unless
+\fB\-\-id\-nth\fR is set and the item has the same key as the previously
+focused item. Because of this, binding \fBreload\fR to this event can cause an
+infinite loop.
 
 e.g.
      \fBfzf \-\-bind 'focus:transform\-preview\-label:echo [ {} ]' \-\-preview 'cat {}'
